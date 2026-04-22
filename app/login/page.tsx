@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 const inputClass = 'w-full bg-white/[0.06] border border-white/[0.1] rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-[#00B4EF]/70 focus:bg-white/[0.09] transition-all text-sm';
@@ -11,8 +11,23 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const res = await fetch('/api/projects');
+        if (res.ok) {
+          router.push('/projects');
+        }
+      } catch {
+        setLoading(false);
+      }
+      setLoading(false);
+    };
+    checkAuth();
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,6 +54,8 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  if (loading) return <div className="min-h-screen bg-[#080D1A]" />;
 
   return (
     <div className="min-h-screen bg-[#080D1A] flex items-center justify-center p-4">
