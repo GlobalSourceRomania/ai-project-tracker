@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 const cardClass = 'bg-white/[0.03] rounded-2xl border border-white/[0.07] p-5 md:p-6 hover:bg-white/[0.05] transition-all cursor-pointer';
 const btnBlue = 'px-4 py-2.5 bg-[#00B4EF]/10 border border-[#00B4EF]/40 text-[#00B4EF] rounded-xl text-sm font-medium hover:bg-[#00B4EF]/20 transition-colors';
 const btnGreen = 'px-4 py-2.5 bg-[#8DC63F]/10 border border-[#8DC63F]/40 text-[#8DC63F] rounded-xl text-sm font-medium hover:bg-[#8DC63F]/20 transition-colors';
+const btnRed = 'px-4 py-2.5 bg-red-500/10 border border-red-500/40 text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/20 transition-colors';
+const selectClass = 'bg-white/[0.06] border border-white/[0.1] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00B4EF]/70 text-sm';
 const inputClass = 'w-full bg-white/[0.06] border border-white/[0.1] rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-[#00B4EF]/70 focus:bg-white/[0.09] transition-all text-sm';
 
 type Project = { id: number; title: string; pipedrive_code: string; owner_id: number; owner_name: string; status: 'planning' | 'in_progress' | 'waiting' | 'completed'; created_at: string; updated_at: string };
@@ -24,6 +26,8 @@ export default function ProjectsPage() {
   const [newUpdate, setNewUpdate] = useState({ whatDone: '', whatWaiting: '', nextSteps: '' });
   const [notification, setNotification] = useState('');
   const [user, setUser] = useState<User | null>(null);
+  const [editingStatus, setEditingStatus] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   useEffect(() => {
     const fetchProjects = async () => {
@@ -57,6 +61,8 @@ export default function ProjectsPage() {
 
   const handleSelectProject = (project: Project) => {
     setSelectedProject(project);
+    setEditingStatus(false);
+    setDeleteConfirm(false);
     fetchProjectUpdates(project.id);
   };
 
@@ -73,7 +79,7 @@ export default function ProjectsPage() {
         setProjects([project, ...projects]);
         setNewProject({ title: '', pipedriveCode: '', status: 'planning' });
         setShowNewForm(false);
-        setNotification('Project created successfully!');
+        setNotification('Project created!');
         setTimeout(() => setNotification(''), 3000);
       }
     } catch {
@@ -95,11 +101,47 @@ export default function ProjectsPage() {
         setUpdates([update, ...updates]);
         setNewUpdate({ whatDone: '', whatWaiting: '', nextSteps: '' });
         setShowUpdateForm(false);
-        setNotification('Update added successfully!');
+        setNotification('Update added!');
         setTimeout(() => setNotification(''), 3000);
       }
     } catch {
       setNotification('Error adding update');
+    }
+  };
+
+  const handleStatusChange = async (newStatus: 'planning' | 'in_progress' | 'waiting' | 'completed') => {
+    if (!selectedProject) return;
+    try {
+      const res = await fetch(`/api/projects/${selectedProject.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setSelectedProject({ ...selectedProject, status: newStatus });
+        setProjects(projects.map(p => p.id === selectedProject.id ? { ...p, status: newStatus } : p));
+        setEditingStatus(false);
+        setNotification('Status updated!');
+        setTimeout(() => setNotification(''), 3000);
+      }
+    } catch {
+      setNotification('Error updating status');
+    }
+  };
+
+  const handleDeleteProject = async () => {
+    if (!selectedProject) return;
+    try {
+      const res = await fetch(`/api/projects/${selectedProject.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setProjects(projects.filter(p => p.id !== selectedProject.id));
+        setSelectedProject(null);
+        setNotification('Project deleted!');
+        setTimeout(() => setNotification(''), 3000);
+      }
+    } catch {
+      setNotification('Error deleting project');
     }
   };
 
@@ -142,7 +184,7 @@ export default function ProjectsPage() {
             <form onSubmit={handleCreateProject} className="space-y-4">
               <input type="text" placeholder="Project title" value={newProject.title} onChange={(e) => setNewProject({ ...newProject, title: e.target.value })} className={inputClass} required />
               <input type="text" placeholder="Pipedrive code (e.g., #260422z1)" value={newProject.pipedriveCode} onChange={(e) => setNewProject({ ...newProject, pipedriveCode: e.target.value })} className={inputClass} required />
-              <select value={newProject.status} onChange={(e) => setNewProject({ ...newProject, status: e.target.value as any })} className={inputClass}>
+              <select value={newProject.status} onChange={(e) => setNewProject({ ...newProject, status: e.target.value as any })} className={selectClass}>
                 <option value="planning">Planning</option>
                 <option value="in_progress">In Progress</option>
                 <option value="waiting">Waiting</option>
@@ -191,8 +233,27 @@ export default function ProjectsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div><p className="text-white/40 text-sm">Pipedrive Code</p><p className="text-white font-mono">{selectedProject.pipedrive_code}</p></div>
                 <div><p className="text-white/40 text-sm">Owner</p><p className="text-white">{selectedProject.owner_name || 'Unassigned'}</p></div>
-                <div><p className="text-white/40 text-sm">Status</p><span className={`inline-block px-3 py-1 rounded-lg border text-sm ${statusColors[selectedProject.status]}`}>{selectedProject.status}</span></div>
                 <div><p className="text-white/40 text-sm">Created</p><p className="text-white text-sm">{new Date(selectedProject.created_at).toLocaleDateString()}</p></div>
+              </div>
+
+              <div>
+                <p className="text-white/40 text-sm mb-2">Status</p>
+                {editingStatus ? (
+                  <div className="flex gap-2">
+                    <select value={selectedProject.status} onChange={(e) => handleStatusChange(e.target.value as any)} className={selectClass}>
+                      <option value="planning">Planning</option>
+                      <option value="in_progress">In Progress</option>
+                      <option value="waiting">Waiting</option>
+                      <option value="completed">Completed</option>
+                    </select>
+                    <button onClick={() => setEditingStatus(false)} className="px-3 py-2 text-white/40 hover:text-white">Cancel</button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className={`px-3 py-1 rounded-lg border ${statusColors[selectedProject.status]}`}>{selectedProject.status}</span>
+                    {user?.role !== 'viewer' && <button onClick={() => setEditingStatus(true)} className={btnBlue}>Change</button>}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -232,6 +293,19 @@ export default function ProjectsPage() {
                 )}
               </div>
             </div>
+
+            {user?.role !== 'viewer' && (
+              <div className="border-t border-white/[0.07] pt-4">
+                {deleteConfirm ? (
+                  <div className="flex gap-2">
+                    <button onClick={handleDeleteProject} className={btnRed}>Confirm Delete</button>
+                    <button onClick={() => setDeleteConfirm(false)} className="px-4 py-2.5 bg-white/[0.05] border border-white/[0.1] text-white/60 rounded-xl text-sm font-medium">Cancel</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setDeleteConfirm(true)} className={btnRed}>Delete Project</button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
