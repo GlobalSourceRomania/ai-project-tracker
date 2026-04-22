@@ -15,6 +15,7 @@ const statusColors: Record<string, string> = {
   in_progress: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
   waiting: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40',
   completed: 'bg-[#8DC63F]/20 text-[#8DC63F] border-[#8DC63F]/40',
+  bottleneck: 'bg-orange-500/20 text-orange-300 border-orange-500/40',
 };
 
 const statusLabels: Record<string, string> = {
@@ -22,9 +23,10 @@ const statusLabels: Record<string, string> = {
   in_progress: 'In Progress',
   waiting: 'Waiting',
   completed: 'Completed',
+  bottleneck: 'Bottleneck',
 };
 
-type Status = 'planning' | 'in_progress' | 'waiting' | 'completed';
+type Status = 'planning' | 'in_progress' | 'waiting' | 'completed' | 'bottleneck';
 type Project = {
   id: number; title: string; pipedrive_code: string; owner_id: number; owner_name: string;
   status: Status; description: string | null; bottleneck: string | null;
@@ -200,13 +202,14 @@ export default function ProjectsPage() {
   const handleSaveBottleneck = async () => {
     if (!selectedProject) return;
     const val = pendingBottleneck.trim() || null;
-    const res = await putProject({ bottleneck: val });
+    const newStatus = val ? 'bottleneck' : selectedProject.status;
+    const res = await putProject({ bottleneck: val, status: newStatus });
     if (res) {
-      const updated = { ...selectedProject, bottleneck: val };
+      const updated = { ...selectedProject, bottleneck: val, status: newStatus as Status };
       setSelectedProject(updated);
-      setProjects(projects.map(p => p.id === selectedProject.id ? { ...p, bottleneck: val } : p));
+      setProjects(projects.map(p => p.id === selectedProject.id ? { ...p, bottleneck: val, status: newStatus as Status } : p));
       setEditingBottleneck(false);
-      notify('Bottleneck saved!');
+      notify(val ? 'Bottleneck salvat — status setat pe Bottleneck!' : 'Bottleneck cleared!');
     }
   };
 
@@ -365,6 +368,7 @@ export default function ProjectsPage() {
                   <option value="in_progress">In Progress</option>
                   <option value="waiting">Waiting</option>
                   <option value="completed">Completed</option>
+                  <option value="bottleneck">Bottleneck</option>
                 </select>
               </div>
               <div>
@@ -464,6 +468,7 @@ export default function ProjectsPage() {
                       <option value="in_progress">In Progress</option>
                       <option value="waiting">Waiting</option>
                       <option value="completed">Completed</option>
+                      <option value="bottleneck">Bottleneck</option>
                     </select>
                     <div className="flex gap-2">
                       <button onClick={handleSaveStatus} className={btnGreen}>Save</button>

@@ -64,6 +64,10 @@ export async function initDB() {
   await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT`;
   await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS bottleneck TEXT`;
 
+  // Migration: expand status check constraint to include 'bottleneck'
+  await sql`ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_status_check`;
+  await sql`ALTER TABLE projects ADD CONSTRAINT projects_status_check CHECK (status IN ('planning', 'in_progress', 'waiting', 'completed', 'bottleneck'))`;
+
   await sql`
     CREATE TABLE IF NOT EXISTS project_updates (
       id SERIAL PRIMARY KEY,
