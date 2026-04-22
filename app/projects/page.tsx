@@ -50,21 +50,27 @@ export default function ProjectsPage() {
   };
 
   useEffect(() => {
-    const fetchProjects = async () => {
+    const fetchData = async () => {
       try {
-        const res = await fetch('/api/projects');
-        if (res.status === 401) { router.push('/login'); return; }
-        if (res.ok) {
-          setProjects(await res.json());
-          setUser({ id: 1, email: '', role: 'admin' });
+        const [meRes, projectsRes] = await Promise.all([
+          fetch('/api/me'),
+          fetch('/api/projects'),
+        ]);
+
+        if (meRes.status === 401 || projectsRes.status === 401) {
+          router.push('/login');
+          return;
         }
+
+        if (meRes.ok) setUser(await meRes.json());
+        if (projectsRes.ok) setProjects(await projectsRes.json());
       } catch {
-        console.error('Failed to fetch projects');
+        console.error('Failed to fetch data');
       } finally {
         setLoading(false);
       }
     };
-    fetchProjects();
+    fetchData();
   }, [router]);
 
   const openModal = useCallback((project: Project) => {
