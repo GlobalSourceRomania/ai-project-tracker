@@ -97,29 +97,23 @@ export async function createUser(email: string, password: string, displayName: s
 
 export async function updateUser(id: number, displayName?: string, role?: 'admin' | 'editor' | 'viewer') {
   const sql = getDB();
-  const updates: string[] = [];
-  const values: any[] = [];
-  let paramCount = 1;
+
+  if (displayName !== undefined && role !== undefined) {
+    const result = await sql`UPDATE users SET display_name = ${displayName}, role = ${role}, updated_at = NOW() WHERE id = ${id} RETURNING id, email, display_name, role, updated_at`;
+    return result[0] || null;
+  }
 
   if (displayName !== undefined) {
-    updates.push(`display_name = $${paramCount}`);
-    values.push(displayName);
-    paramCount++;
+    const result = await sql`UPDATE users SET display_name = ${displayName}, updated_at = NOW() WHERE id = ${id} RETURNING id, email, display_name, role, updated_at`;
+    return result[0] || null;
   }
+
   if (role !== undefined) {
-    updates.push(`role = $${paramCount}`);
-    values.push(role);
-    paramCount++;
+    const result = await sql`UPDATE users SET role = ${role}, updated_at = NOW() WHERE id = ${id} RETURNING id, email, display_name, role, updated_at`;
+    return result[0] || null;
   }
 
-  if (updates.length === 0) return null;
-
-  updates.push(`updated_at = NOW()`);
-  values.push(id);
-
-  const query = `UPDATE users SET ${updates.join(', ')} WHERE id = $${paramCount} RETURNING id, email, display_name, role, updated_at`;
-  const result = await sql(query, values);
-  return result[0] || null;
+  return null;
 }
 
 export async function deleteUser(id: number) {
@@ -175,28 +169,23 @@ export async function createProject(title: string, pipedriveCode: string, ownerI
 
 export async function updateProject(id: number, title?: string, status?: 'planning' | 'in_progress' | 'waiting' | 'completed') {
   const sql = getDB();
-  const updates: any[] = [];
 
-  if (title !== undefined) updates.push({ field: 'title', value: title });
-  if (status !== undefined) updates.push({ field: 'status', value: status });
+  if (title !== undefined && status !== undefined) {
+    const result = await sql`UPDATE projects SET title = ${title}, status = ${status}, updated_at = NOW() WHERE id = ${id} RETURNING *`;
+    return result[0] || null;
+  }
 
-  if (updates.length === 0) return null;
+  if (title !== undefined) {
+    const result = await sql`UPDATE projects SET title = ${title}, updated_at = NOW() WHERE id = ${id} RETURNING *`;
+    return result[0] || null;
+  }
 
-  let query = 'UPDATE projects SET ';
-  const values = [];
-  const setParts = [];
+  if (status !== undefined) {
+    const result = await sql`UPDATE projects SET status = ${status}, updated_at = NOW() WHERE id = ${id} RETURNING *`;
+    return result[0] || null;
+  }
 
-  updates.forEach((u, i) => {
-    setParts.push(`${u.field} = $${i + 1}`);
-    values.push(u.value);
-  });
-
-  setParts.push(`updated_at = NOW()`);
-  values.push(id);
-
-  query += setParts.join(', ') + ` WHERE id = $${values.length} RETURNING *`;
-  const result = await sql(query, values);
-  return result[0] || null;
+  return null;
 }
 
 export async function deleteProject(id: number) {
