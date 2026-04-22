@@ -1,9 +1,32 @@
 import { neon } from '@neondatabase/serverless';
 import bcryptjs from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key-change-in-production';
 
 export function getDB() {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL not set');
   return neon(process.env.DATABASE_URL);
+}
+
+export async function getCurrentUser(request: Request) {
+  const cookieHeader = request.headers.get('cookie') || '';
+  const cookies = cookieHeader.split('; ').reduce((acc: any, cookie) => {
+    const [key, value] = cookie.split('=');
+    acc[key] = value;
+    return acc;
+  }, {});
+
+  const token = cookies.token;
+  if (!token) return null;
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as any;
+    const user = await getUserById(payload.userId);
+    return user || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function initDB() {

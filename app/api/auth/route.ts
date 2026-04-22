@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserByEmail, createUser, verifyPassword, getCurrentUser } from '@/lib/db';
+import { getUserByEmail, createUser, verifyPassword } from '@/lib/db';
 import { generateToken, setAuthCookie, clearAuthCookie } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
