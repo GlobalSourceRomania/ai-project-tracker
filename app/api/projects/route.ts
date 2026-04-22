@@ -10,12 +10,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    let projects;
-    if (user.role === 'viewer') {
-      projects = await getProjectsByUserId(user.id);
-    } else {
-      projects = await getAllProjects();
-    }
+    const projects = await getAllProjects();
 
     return NextResponse.json(projects);
   } catch (error) {
