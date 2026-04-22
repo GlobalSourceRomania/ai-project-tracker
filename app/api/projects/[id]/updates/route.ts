@@ -3,14 +3,15 @@ import { getProjectUpdates, createProjectUpdate, deleteProjectUpdate, getProject
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const projectId = parseInt(params.id);
+    const projectId = parseInt(id);
     const project = await getProjectById(projectId);
     if (!project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
@@ -23,14 +24,15 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const user = await getCurrentUser(request);
     if (!user || (user.role !== 'editor' && user.role !== 'admin')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
-    const projectId = parseInt(params.id);
+    const projectId = parseInt(id);
     const project = await getProjectById(projectId);
     if (!project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
