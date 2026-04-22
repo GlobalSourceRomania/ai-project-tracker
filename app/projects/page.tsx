@@ -354,7 +354,7 @@ export default function ProjectsPage() {
                   </div>
                 ) : (
                   <div className="flex items-center gap-3">
-                    <span className={`px-3 py-1.5 rounded-lg border text-sm font-medium ${statusColors[selectedProject.status]}`}>
+                    <span className={`px-4 py-2.5 rounded-xl border text-sm font-medium ${statusColors[selectedProject.status]}`}>
                       {statusLabels[selectedProject.status]}
                     </span>
                     {user?.role !== 'viewer' && (

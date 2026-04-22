@@ -67,3 +67,8 @@ textarea {
   resize: vertical;
   min-height: 80px;
 }
+
+/* Prevent iOS/Android zoom on input focus (requires font-size >= 16px) */
+input, select, textarea {
+  font-size: 16px !important;
+}
