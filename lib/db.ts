@@ -52,11 +52,17 @@ export async function initDB() {
       pipedrive_code TEXT NOT NULL,
       owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
       status TEXT CHECK (status IN ('planning', 'in_progress', 'waiting', 'completed')) DEFAULT 'planning',
+      description TEXT,
+      bottleneck TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW(),
       CONSTRAINT projects_pipedrive_code_unique UNIQUE (pipedrive_code)
     )
   `;
+
+  // Migration: add new columns to existing projects table
+  await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT`;
+  await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS bottleneck TEXT`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS project_updates (
@@ -66,6 +72,16 @@ export async function initDB() {
       what_done TEXT,
       what_waiting TEXT,
       next_steps TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS project_tasks (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      is_done BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `;
@@ -157,35 +173,38 @@ export async function getProjectsByUserId(userId: number) {
   `;
 }
 
-export async function createProject(title: string, pipedriveCode: string, ownerId: number, status: 'planning' | 'in_progress' | 'waiting' | 'completed' = 'planning') {
+export async function createProject(
+  title: string,
+  pipedriveCode: string,
+  ownerId: number,
+  status: 'planning' | 'in_progress' | 'waiting' | 'completed' = 'planning',
+  description?: string,
+  bottleneck?: string,
+) {
   const sql = getDB();
   const result = await sql`
-    INSERT INTO projects (title, pipedrive_code, owner_id, status)
-    VALUES (${title}, ${pipedriveCode}, ${ownerId}, ${status})
+    INSERT INTO projects (title, pipedrive_code, owner_id, status, description, bottleneck)
+    VALUES (${title}, ${pipedriveCode}, ${ownerId}, ${status}, ${description || null}, ${bottleneck || null})
     RETURNING *
   `;
   return result[0];
 }
 
-export async function updateProject(id: number, title?: string, status?: 'planning' | 'in_progress' | 'waiting' | 'completed') {
+export async function updateProject(
+  id: number,
+  title: string,
+  status: string,
+  description: string | null,
+  bottleneck: string | null,
+) {
   const sql = getDB();
-
-  if (title !== undefined && status !== undefined) {
-    const result = await sql`UPDATE projects SET title = ${title}, status = ${status}, updated_at = NOW() WHERE id = ${id} RETURNING *`;
-    return result[0] || null;
-  }
-
-  if (title !== undefined) {
-    const result = await sql`UPDATE projects SET title = ${title}, updated_at = NOW() WHERE id = ${id} RETURNING *`;
-    return result[0] || null;
-  }
-
-  if (status !== undefined) {
-    const result = await sql`UPDATE projects SET status = ${status}, updated_at = NOW() WHERE id = ${id} RETURNING *`;
-    return result[0] || null;
-  }
-
-  return null;
+  const result = await sql`
+    UPDATE projects
+    SET title = ${title}, status = ${status}, description = ${description}, bottleneck = ${bottleneck}, updated_at = NOW()
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  return result[0] || null;
 }
 
 export async function deleteProject(id: number) {
@@ -217,4 +236,28 @@ export async function createProjectUpdate(projectId: number, authorId: number, w
 export async function deleteProjectUpdate(id: number) {
   const sql = getDB();
   await sql`DELETE FROM project_updates WHERE id = ${id}`;
+}
+
+export async function getProjectTasks(projectId: number) {
+  const sql = getDB();
+  return sql`SELECT * FROM project_tasks WHERE project_id = ${projectId} ORDER BY created_at ASC`;
+}
+
+export async function createProjectTask(projectId: number, title: string) {
+  const sql = getDB();
+  const result = await sql`
+    INSERT INTO project_tasks (project_id, title) VALUES (${projectId}, ${title}) RETURNING *
+  `;
+  return result[0];
+}
+
+export async function toggleProjectTask(id: number, isDone: boolean) {
+  const sql = getDB();
+  const result = await sql`UPDATE project_tasks SET is_done = ${isDone} WHERE id = ${id} RETURNING *`;
+  return result[0] || null;
+}
+
+export async function deleteProjectTask(id: number) {
+  const sql = getDB();
+  await sql`DELETE FROM project_tasks WHERE id = ${id}`;
 }

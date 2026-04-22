@@ -25,8 +25,13 @@ const statusLabels: Record<string, string> = {
 };
 
 type Status = 'planning' | 'in_progress' | 'waiting' | 'completed';
-type Project = { id: number; title: string; pipedrive_code: string; owner_id: number; owner_name: string; status: Status; created_at: string; updated_at: string };
+type Project = {
+  id: number; title: string; pipedrive_code: string; owner_id: number; owner_name: string;
+  status: Status; description: string | null; bottleneck: string | null;
+  created_at: string; updated_at: string;
+};
 type ProjectUpdate = { id: number; what_done: string; what_waiting: string; next_steps: string; created_at: string; author_name: string };
+type Task = { id: number; project_id: number; title: string; is_done: boolean; created_at: string };
 type User = { id: number; email: string; role: 'admin' | 'editor' | 'viewer' };
 
 export default function ProjectsPage() {
@@ -34,18 +39,38 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [updates, setUpdates] = useState<ProjectUpdate[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showNewForm, setShowNewForm] = useState(false);
-  const [showUpdateForm, setShowUpdateForm] = useState(false);
-  const [newProject, setNewProject] = useState({ title: '', pipedriveCode: '', status: 'planning' as Status });
-  const [newUpdate, setNewUpdate] = useState({ whatDone: '', whatWaiting: '', nextSteps: '' });
-  const [notification, setNotification] = useState('');
   const [user, setUser] = useState<User | null>(null);
+  const [notification, setNotification] = useState('');
+
+  // New project form
+  const [showNewForm, setShowNewForm] = useState(false);
+  const [newProject, setNewProject] = useState({ title: '', pipedriveCode: '', status: 'planning' as Status, description: '', bottleneck: '' });
+
+  // Status editing
   const [editingStatus, setEditingStatus] = useState(false);
   const [pendingStatus, setPendingStatus] = useState<Status | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState(false);
+
+  // Description editing
+  const [editingDescription, setEditingDescription] = useState(false);
+  const [pendingDescription, setPendingDescription] = useState('');
+
+  // Bottleneck editing
+  const [editingBottleneck, setEditingBottleneck] = useState(false);
+  const [pendingBottleneck, setPendingBottleneck] = useState('');
+
+  // Updates
+  const [showUpdateForm, setShowUpdateForm] = useState(false);
+  const [newUpdate, setNewUpdate] = useState({ whatDone: '', whatWaiting: '', nextSteps: '' });
   const [editingUpdate, setEditingUpdate] = useState<ProjectUpdate | null>(null);
   const [deleteUpdateConfirm, setDeleteUpdateConfirm] = useState<number | null>(null);
+
+  // Tasks
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+
+  // Delete project
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   const notify = (msg: string) => {
     setNotification(msg);
@@ -72,25 +97,37 @@ export default function ProjectsPage() {
     setSelectedProject(project);
     setEditingStatus(false);
     setPendingStatus(null);
+    setEditingDescription(false);
+    setPendingDescription('');
+    setEditingBottleneck(false);
+    setPendingBottleneck('');
     setDeleteConfirm(false);
     setShowUpdateForm(false);
     setEditingUpdate(null);
     setDeleteUpdateConfirm(null);
+    setNewTaskTitle('');
     document.body.classList.add('modal-open');
-    fetch(`/api/projects/${project.id}/updates`)
-      .then(r => r.ok ? r.json() : [])
-      .then(data => setUpdates(data))
-      .catch(() => setUpdates([]));
+
+    Promise.all([
+      fetch(`/api/projects/${project.id}/updates`).then(r => r.ok ? r.json() : []),
+      fetch(`/api/projects/${project.id}/tasks`).then(r => r.ok ? r.json() : []),
+    ]).then(([upd, tsk]) => {
+      setUpdates(upd);
+      setTasks(tsk);
+    }).catch(() => { setUpdates([]); setTasks([]); });
   }, []);
 
   const closeModal = useCallback(() => {
     setSelectedProject(null);
     setEditingStatus(false);
     setPendingStatus(null);
+    setEditingDescription(false);
+    setEditingBottleneck(false);
     setDeleteConfirm(false);
     setShowUpdateForm(false);
     setEditingUpdate(null);
     setDeleteUpdateConfirm(null);
+    setNewTaskTitle('');
     document.body.classList.remove('modal-open');
   }, []);
 
@@ -111,11 +148,66 @@ export default function ProjectsPage() {
       if (res.ok) {
         const { project } = await res.json();
         setProjects([project, ...projects]);
-        setNewProject({ title: '', pipedriveCode: '', status: 'planning' });
+        setNewProject({ title: '', pipedriveCode: '', status: 'planning', description: '', bottleneck: '' });
         setShowNewForm(false);
         notify('Project created!');
       }
     } catch { notify('Error creating project'); }
+  };
+
+  const putProject = async (patch: Partial<{ title: string; status: string; description: string | null; bottleneck: string | null }>) => {
+    if (!selectedProject) return null;
+    const res = await fetch(`/api/projects/${selectedProject.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: selectedProject.title,
+        status: selectedProject.status,
+        description: selectedProject.description,
+        bottleneck: selectedProject.bottleneck,
+        ...patch,
+      }),
+    });
+    return res.ok ? res : null;
+  };
+
+  const handleSaveStatus = async () => {
+    if (!selectedProject || !pendingStatus) return;
+    const res = await putProject({ status: pendingStatus });
+    if (res) {
+      const updated = { ...selectedProject, status: pendingStatus };
+      setSelectedProject(updated);
+      setProjects(projects.map(p => p.id === selectedProject.id ? { ...p, status: pendingStatus } : p));
+      setEditingStatus(false);
+      setPendingStatus(null);
+      notify('Status updated!');
+    }
+  };
+
+  const handleSaveDescription = async () => {
+    if (!selectedProject) return;
+    const val = pendingDescription.trim() || null;
+    const res = await putProject({ description: val });
+    if (res) {
+      const updated = { ...selectedProject, description: val };
+      setSelectedProject(updated);
+      setProjects(projects.map(p => p.id === selectedProject.id ? { ...p, description: val } : p));
+      setEditingDescription(false);
+      notify('Description saved!');
+    }
+  };
+
+  const handleSaveBottleneck = async () => {
+    if (!selectedProject) return;
+    const val = pendingBottleneck.trim() || null;
+    const res = await putProject({ bottleneck: val });
+    if (res) {
+      const updated = { ...selectedProject, bottleneck: val };
+      setSelectedProject(updated);
+      setProjects(projects.map(p => p.id === selectedProject.id ? { ...p, bottleneck: val } : p));
+      setEditingBottleneck(false);
+      notify('Bottleneck saved!');
+    }
   };
 
   const handleAddUpdate = async (e: React.FormEvent) => {
@@ -137,24 +229,6 @@ export default function ProjectsPage() {
     } catch { notify('Error adding update'); }
   };
 
-  const handleSaveStatus = async () => {
-    if (!selectedProject || !pendingStatus) return;
-    try {
-      const res = await fetch(`/api/projects/${selectedProject.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: pendingStatus }),
-      });
-      if (res.ok) {
-        setSelectedProject({ ...selectedProject, status: pendingStatus });
-        setProjects(projects.map(p => p.id === selectedProject.id ? { ...p, status: pendingStatus } : p));
-        setEditingStatus(false);
-        setPendingStatus(null);
-        notify('Status updated!');
-      }
-    } catch { notify('Error updating status'); }
-  };
-
   const handleSaveUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProject || !editingUpdate) return;
@@ -162,12 +236,7 @@ export default function ProjectsPage() {
       const res = await fetch(`/api/projects/${selectedProject.id}/updates`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          updateId: editingUpdate.id,
-          whatDone: editingUpdate.what_done,
-          whatWaiting: editingUpdate.what_waiting,
-          nextSteps: editingUpdate.next_steps,
-        }),
+        body: JSON.stringify({ updateId: editingUpdate.id, whatDone: editingUpdate.what_done, whatWaiting: editingUpdate.what_waiting, nextSteps: editingUpdate.next_steps }),
       });
       if (res.ok) {
         setUpdates(updates.map(u => u.id === editingUpdate.id ? editingUpdate : u));
@@ -185,23 +254,57 @@ export default function ProjectsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ updateId }),
       });
-      if (res.ok) {
-        setUpdates(updates.filter(u => u.id !== updateId));
-        setDeleteUpdateConfirm(null);
-        notify('Update deleted!');
-      }
+      if (res.ok) { setUpdates(updates.filter(u => u.id !== updateId)); setDeleteUpdateConfirm(null); notify('Update deleted!'); }
     } catch { notify('Error deleting update'); }
+  };
+
+  const handleAddTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProject || !newTaskTitle.trim()) return;
+    try {
+      const res = await fetch(`/api/projects/${selectedProject.id}/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newTaskTitle }),
+      });
+      if (res.ok) {
+        const { task } = await res.json();
+        setTasks([...tasks, task]);
+        setNewTaskTitle('');
+        notify('Task added!');
+      }
+    } catch { notify('Error adding task'); }
+  };
+
+  const handleToggleTask = async (taskId: number, isDone: boolean) => {
+    if (!selectedProject) return;
+    try {
+      const res = await fetch(`/api/projects/${selectedProject.id}/tasks`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId, isDone }),
+      });
+      if (res.ok) setTasks(tasks.map(t => t.id === taskId ? { ...t, is_done: isDone } : t));
+    } catch { notify('Error updating task'); }
+  };
+
+  const handleDeleteTask = async (taskId: number) => {
+    if (!selectedProject) return;
+    try {
+      const res = await fetch(`/api/projects/${selectedProject.id}/tasks`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId }),
+      });
+      if (res.ok) { setTasks(tasks.filter(t => t.id !== taskId)); notify('Task deleted!'); }
+    } catch { notify('Error deleting task'); }
   };
 
   const handleDeleteProject = async () => {
     if (!selectedProject) return;
     try {
       const res = await fetch(`/api/projects/${selectedProject.id}`, { method: 'DELETE' });
-      if (res.ok) {
-        setProjects(projects.filter(p => p.id !== selectedProject.id));
-        closeModal();
-        notify('Project deleted!');
-      }
+      if (res.ok) { setProjects(projects.filter(p => p.id !== selectedProject.id)); closeModal(); notify('Project deleted!'); }
     } catch { notify('Error deleting project'); }
   };
 
@@ -209,6 +312,8 @@ export default function ProjectsPage() {
     await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'logout' }) });
     router.push('/login');
   };
+
+  const doneTasks = tasks.filter(t => t.is_done).length;
 
   if (loading) return <div className="min-h-screen bg-[#080D1A]" />;
 
@@ -262,6 +367,14 @@ export default function ProjectsPage() {
                   <option value="completed">Completed</option>
                 </select>
               </div>
+              <div>
+                <label className="text-white/50 text-xs mb-1 block">Descriere (opțional)</label>
+                <textarea placeholder="Descriere generală a proiectului..." value={newProject.description} onChange={(e) => setNewProject({ ...newProject, description: e.target.value })} className={inputClass} rows={2} />
+              </div>
+              <div>
+                <label className="text-white/50 text-xs mb-1 block">Bottleneck (opțional)</label>
+                <textarea placeholder="Punct de blocare curent..." value={newProject.bottleneck} onChange={(e) => setNewProject({ ...newProject, bottleneck: e.target.value })} className={inputClass} rows={2} />
+              </div>
               <div className="flex gap-2">
                 <button type="submit" className={btnGreen}>Create</button>
                 <button type="button" onClick={() => setShowNewForm(false)} className={btnGray}>Cancel</button>
@@ -286,12 +399,21 @@ export default function ProjectsPage() {
                 onClick={() => openModal(project)}
                 className="text-left w-full bg-white/[0.03] rounded-2xl border border-white/[0.07] p-5 hover:bg-white/[0.06] hover:border-white/[0.12] transition-all focus:outline-none focus:ring-2 focus:ring-[#00B4EF]/40"
               >
-                <div className="flex items-start justify-between mb-4 gap-2">
+                <div className="flex items-start justify-between mb-3 gap-2">
                   <h3 className="text-base font-semibold text-white leading-tight flex-1">{project.title}</h3>
                   <span className="text-[#00B4EF] font-mono text-xs bg-[#00B4EF]/10 px-2 py-1 rounded-lg border border-[#00B4EF]/20 shrink-0">
                     {project.pipedrive_code}
                   </span>
                 </div>
+                {project.description && (
+                  <p className="text-white/40 text-xs mb-3 line-clamp-2">{project.description}</p>
+                )}
+                {project.bottleneck && (
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <span className="text-orange-400 text-xs">⚠</span>
+                    <p className="text-orange-300/70 text-xs line-clamp-1">{project.bottleneck}</p>
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className={`px-2.5 py-1 rounded-lg border text-xs font-medium ${statusColors[project.status]}`}>
                     {statusLabels[project.status]}
@@ -337,11 +459,7 @@ export default function ProjectsPage() {
                 <p className="text-white/40 text-xs mb-3">Status</p>
                 {editingStatus ? (
                   <div className="space-y-3">
-                    <select
-                      value={pendingStatus ?? selectedProject.status}
-                      onChange={(e) => setPendingStatus(e.target.value as Status)}
-                      className={selectClass}
-                    >
+                    <select value={pendingStatus ?? selectedProject.status} onChange={(e) => setPendingStatus(e.target.value as Status)} className={selectClass}>
                       <option value="planning">Planning</option>
                       <option value="in_progress">In Progress</option>
                       <option value="waiting">Waiting</option>
@@ -361,6 +479,143 @@ export default function ProjectsPage() {
                       <button onClick={() => { setEditingStatus(true); setPendingStatus(selectedProject.status); }} className={btnBlue}>Change</button>
                     )}
                   </div>
+                )}
+              </div>
+
+              {/* Description */}
+              <div className="bg-white/[0.03] rounded-xl p-4 border border-white/[0.05]">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-white/40 text-xs">Descriere</p>
+                  {user?.role !== 'viewer' && !editingDescription && (
+                    <button onClick={() => { setEditingDescription(true); setPendingDescription(selectedProject.description || ''); }} className="text-[#00B4EF] text-xs hover:text-[#00B4EF]/80 transition-colors">Edit</button>
+                  )}
+                </div>
+                {editingDescription ? (
+                  <div className="space-y-3">
+                    <textarea
+                      value={pendingDescription}
+                      onChange={(e) => setPendingDescription(e.target.value)}
+                      placeholder="Descriere generală a proiectului..."
+                      className={inputClass}
+                      rows={3}
+                    />
+                    <div className="flex gap-2">
+                      <button onClick={handleSaveDescription} className={btnGreen}>Save</button>
+                      <button onClick={() => setEditingDescription(false)} className={btnGray}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className={selectedProject.description ? 'text-white/80 text-sm leading-relaxed' : 'text-white/25 text-sm italic'}>
+                    {selectedProject.description || 'Nicio descriere adăugată'}
+                  </p>
+                )}
+              </div>
+
+              {/* Bottleneck */}
+              <div className="bg-orange-500/[0.06] rounded-xl p-4 border border-orange-500/20">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-orange-400 text-sm">⚠</span>
+                    <p className="text-orange-300/70 text-xs">Bottleneck</p>
+                  </div>
+                  {user?.role !== 'viewer' && !editingBottleneck && (
+                    <button onClick={() => { setEditingBottleneck(true); setPendingBottleneck(selectedProject.bottleneck || ''); }} className="text-orange-400 text-xs hover:text-orange-300 transition-colors">Edit</button>
+                  )}
+                </div>
+                {editingBottleneck ? (
+                  <div className="space-y-3">
+                    <textarea
+                      value={pendingBottleneck}
+                      onChange={(e) => setPendingBottleneck(e.target.value)}
+                      placeholder="Punct de blocare curent..."
+                      className={inputClass}
+                      rows={3}
+                    />
+                    <div className="flex gap-2">
+                      <button onClick={handleSaveBottleneck} className={btnGreen}>Save</button>
+                      <button onClick={() => setEditingBottleneck(false)} className={btnGray}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className={selectedProject.bottleneck ? 'text-orange-200/80 text-sm leading-relaxed' : 'text-white/25 text-sm italic'}>
+                    {selectedProject.bottleneck || 'Niciun bottleneck identificat'}
+                  </p>
+                )}
+              </div>
+
+              {/* Tasks */}
+              <div className="bg-white/[0.03] rounded-xl p-4 border border-white/[0.05]">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <p className="text-white font-semibold text-sm">Pași / Tasks</p>
+                    {tasks.length > 0 && (
+                      <span className="text-white/40 text-xs">{doneTasks}/{tasks.length} completate</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Progress bar */}
+                {tasks.length > 0 && (
+                  <div className="h-1.5 bg-white/[0.06] rounded-full mb-4 overflow-hidden">
+                    <div
+                      className="h-full bg-[#8DC63F] rounded-full transition-all duration-300"
+                      style={{ width: `${(doneTasks / tasks.length) * 100}%` }}
+                    />
+                  </div>
+                )}
+
+                {/* Task list */}
+                <div className="space-y-2 mb-4">
+                  {tasks.length === 0 && (
+                    <p className="text-white/25 text-sm italic">Niciun pas adăugat</p>
+                  )}
+                  {tasks.map((task) => (
+                    <div key={task.id} className="flex items-center gap-3 group">
+                      {user?.role !== 'viewer' ? (
+                        <button
+                          onClick={() => handleToggleTask(task.id, !task.is_done)}
+                          className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-all ${
+                            task.is_done
+                              ? 'bg-[#8DC63F] border-[#8DC63F] text-white'
+                              : 'border-white/30 hover:border-[#8DC63F]/60'
+                          }`}
+                        >
+                          {task.is_done && <span className="text-xs leading-none">✓</span>}
+                        </button>
+                      ) : (
+                        <div className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 ${
+                          task.is_done ? 'bg-[#8DC63F] border-[#8DC63F] text-white' : 'border-white/20'
+                        }`}>
+                          {task.is_done && <span className="text-xs leading-none">✓</span>}
+                        </div>
+                      )}
+                      <span className={`flex-1 text-sm ${task.is_done ? 'line-through text-white/30' : 'text-white/80'}`}>
+                        {task.title}
+                      </span>
+                      {user?.role !== 'viewer' && (
+                        <button
+                          onClick={() => handleDeleteTask(task.id)}
+                          className="opacity-0 group-hover:opacity-100 text-red-400/60 hover:text-red-400 text-xs transition-all px-1"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add task form */}
+                {user?.role !== 'viewer' && (
+                  <form onSubmit={handleAddTask} className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Adaugă un pas nou..."
+                      value={newTaskTitle}
+                      onChange={(e) => setNewTaskTitle(e.target.value)}
+                      className={`${inputClass} flex-1`}
+                    />
+                    <button type="submit" className={btnGreen}>+ Add</button>
+                  </form>
                 )}
               </div>
 

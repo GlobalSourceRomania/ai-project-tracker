@@ -18,9 +18,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     const body = await request.json();
-    const { title, status } = body;
+    const title = body.title !== undefined ? body.title : project.title;
+    const status = body.status !== undefined ? body.status : project.status;
+    const description = body.description !== undefined ? body.description : project.description ?? null;
+    const bottleneck = body.bottleneck !== undefined ? body.bottleneck : project.bottleneck ?? null;
 
-    const updated = await updateProject(projectId, title, status);
+    const updated = await updateProject(projectId, title, status, description, bottleneck);
     return NextResponse.json({ ok: true, ...updated });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
