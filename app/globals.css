@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #080D1A;
+  --foreground: #E8EBF0;
 }
 
 @theme inline {
@@ -12,15 +12,58 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html, body {
+  background: #080D1A;
+  color: #E8EBF0;
+  font-family: Arial, Helvetica, sans-serif;
+  height: 100%;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Fix select/dropdown text visibility on all browsers */
+select {
+  color: white;
+  background-color: rgba(255, 255, 255, 0.06);
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+select option {
+  background-color: #111827;
+  color: white;
+  padding: 8px;
+}
+
+select:focus {
+  outline: none;
+}
+
+/* Fix modal body scroll lock */
+body.modal-open {
+  overflow: hidden;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Textarea resize */
+textarea {
+  resize: vertical;
+  min-height: 80px;
 }

@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 
 const cardClass = 'bg-white/[0.03] rounded-2xl border border-white/[0.07] p-5 md:p-6';
 const inputClass = 'w-full bg-white/[0.06] border border-white/[0.1] rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-[#00B4EF]/70 focus:bg-white/[0.09] transition-all text-sm';
-const selectClass = 'bg-white/[0.06] border border-white/[0.1] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-[#00B4EF]/70 text-sm';
+const selectClass = 'bg-[#111827] border border-white/[0.15] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-[#00B4EF]/70 text-sm cursor-pointer';
+const selectFullClass = 'w-full bg-[#111827] border border-white/[0.15] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00B4EF]/70 text-sm cursor-pointer';
 const btnBlue = 'px-3 py-2 bg-[#00B4EF]/10 border border-[#00B4EF]/40 text-[#00B4EF] rounded-xl text-xs font-medium hover:bg-[#00B4EF]/20 transition-colors';
 const btnGreen = 'px-4 py-2.5 bg-[#8DC63F]/10 border border-[#8DC63F]/40 text-[#8DC63F] rounded-xl text-sm font-medium hover:bg-[#8DC63F]/20 transition-colors';
 const btnRed = 'px-3 py-2 bg-red-500/10 border border-red-500/40 text-red-400 rounded-xl text-xs font-medium hover:bg-red-500/20 transition-colors';
@@ -127,7 +128,7 @@ export default function UsersPage() {
               <input type="email" placeholder="Email" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} className={inputClass} required />
               <input type="password" placeholder="Password" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} className={inputClass} required />
               <input type="text" placeholder="Display name" value={newUser.displayName} onChange={(e) => setNewUser({ ...newUser, displayName: e.target.value })} className={inputClass} required />
-              <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value as any })} className={inputClass}>
+              <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value as any })} className={selectFullClass}>
                 <option value="viewer">Viewer (read-only)</option>
                 <option value="editor">Editor</option>
                 <option value="admin">Admin</option>

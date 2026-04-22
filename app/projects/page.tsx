@@ -1,16 +1,31 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
-const cardClass = 'bg-white/[0.03] rounded-2xl border border-white/[0.07] p-5 md:p-6 hover:bg-white/[0.05] transition-all cursor-pointer';
+const inputClass = 'w-full bg-white/[0.06] border border-white/[0.1] rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-[#00B4EF]/70 focus:bg-white/[0.09] transition-all text-sm';
+const selectClass = 'w-full bg-[#111827] border border-white/[0.15] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00B4EF]/70 transition-all text-sm cursor-pointer';
 const btnBlue = 'px-4 py-2.5 bg-[#00B4EF]/10 border border-[#00B4EF]/40 text-[#00B4EF] rounded-xl text-sm font-medium hover:bg-[#00B4EF]/20 transition-colors';
 const btnGreen = 'px-4 py-2.5 bg-[#8DC63F]/10 border border-[#8DC63F]/40 text-[#8DC63F] rounded-xl text-sm font-medium hover:bg-[#8DC63F]/20 transition-colors';
 const btnRed = 'px-4 py-2.5 bg-red-500/10 border border-red-500/40 text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/20 transition-colors';
-const selectClass = 'bg-white/[0.06] border border-white/[0.1] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00B4EF]/70 text-sm';
-const inputClass = 'w-full bg-white/[0.06] border border-white/[0.1] rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-[#00B4EF]/70 focus:bg-white/[0.09] transition-all text-sm';
+const btnGray = 'px-4 py-2.5 bg-white/[0.05] border border-white/[0.1] text-white/60 rounded-xl text-sm font-medium hover:bg-white/[0.08] transition-colors';
 
-type Project = { id: number; title: string; pipedrive_code: string; owner_id: number; owner_name: string; status: 'planning' | 'in_progress' | 'waiting' | 'completed'; created_at: string; updated_at: string };
+const statusColors: Record<string, string> = {
+  planning: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+  in_progress: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+  waiting: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40',
+  completed: 'bg-[#8DC63F]/20 text-[#8DC63F] border-[#8DC63F]/40',
+};
+
+const statusLabels: Record<string, string> = {
+  planning: 'Planning',
+  in_progress: 'In Progress',
+  waiting: 'Waiting',
+  completed: 'Completed',
+};
+
+type Status = 'planning' | 'in_progress' | 'waiting' | 'completed';
+type Project = { id: number; title: string; pipedrive_code: string; owner_id: number; owner_name: string; status: Status; created_at: string; updated_at: string };
 type ProjectUpdate = { id: number; what_done: string; what_waiting: string; next_steps: string; created_at: string; author_name: string };
 type User = { id: number; email: string; role: 'admin' | 'editor' | 'viewer' };
 
@@ -22,21 +37,23 @@ export default function ProjectsPage() {
   const [loading, setLoading] = useState(true);
   const [showNewForm, setShowNewForm] = useState(false);
   const [showUpdateForm, setShowUpdateForm] = useState(false);
-  const [newProject, setNewProject] = useState({ title: '', pipedriveCode: '', status: 'planning' });
+  const [newProject, setNewProject] = useState({ title: '', pipedriveCode: '', status: 'planning' as Status });
   const [newUpdate, setNewUpdate] = useState({ whatDone: '', whatWaiting: '', nextSteps: '' });
   const [notification, setNotification] = useState('');
   const [user, setUser] = useState<User | null>(null);
   const [editingStatus, setEditingStatus] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
+  const notify = (msg: string) => {
+    setNotification(msg);
+    setTimeout(() => setNotification(''), 3000);
+  };
+
   useEffect(() => {
     const fetchProjects = async () => {
       try {
         const res = await fetch('/api/projects');
-        if (res.status === 401) {
-          router.push('/login');
-          return;
-        }
+        if (res.status === 401) { router.push('/login'); return; }
         if (res.ok) {
           setProjects(await res.json());
           setUser({ id: 1, email: '', role: 'admin' });
@@ -50,21 +67,31 @@ export default function ProjectsPage() {
     fetchProjects();
   }, [router]);
 
-  const fetchProjectUpdates = async (projectId: number) => {
-    try {
-      const res = await fetch(`/api/projects/${projectId}/updates`);
-      if (res.ok) setUpdates(await res.json());
-    } catch {
-      console.error('Failed to fetch updates');
-    }
-  };
-
-  const handleSelectProject = (project: Project) => {
+  const openModal = useCallback((project: Project) => {
     setSelectedProject(project);
     setEditingStatus(false);
     setDeleteConfirm(false);
-    fetchProjectUpdates(project.id);
-  };
+    setShowUpdateForm(false);
+    document.body.classList.add('modal-open');
+    fetch(`/api/projects/${project.id}/updates`)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setUpdates(data))
+      .catch(() => setUpdates([]));
+  }, []);
+
+  const closeModal = useCallback(() => {
+    setSelectedProject(null);
+    setEditingStatus(false);
+    setDeleteConfirm(false);
+    setShowUpdateForm(false);
+    document.body.classList.remove('modal-open');
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') closeModal(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [closeModal]);
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,11 +106,10 @@ export default function ProjectsPage() {
         setProjects([project, ...projects]);
         setNewProject({ title: '', pipedriveCode: '', status: 'planning' });
         setShowNewForm(false);
-        setNotification('Project created!');
-        setTimeout(() => setNotification(''), 3000);
+        notify('Project created!');
       }
     } catch {
-      setNotification('Error creating project');
+      notify('Error creating project');
     }
   };
 
@@ -101,15 +127,14 @@ export default function ProjectsPage() {
         setUpdates([update, ...updates]);
         setNewUpdate({ whatDone: '', whatWaiting: '', nextSteps: '' });
         setShowUpdateForm(false);
-        setNotification('Update added!');
-        setTimeout(() => setNotification(''), 3000);
+        notify('Update added!');
       }
     } catch {
-      setNotification('Error adding update');
+      notify('Error adding update');
     }
   };
 
-  const handleStatusChange = async (newStatus: 'planning' | 'in_progress' | 'waiting' | 'completed') => {
+  const handleStatusChange = async (newStatus: Status) => {
     if (!selectedProject) return;
     try {
       const res = await fetch(`/api/projects/${selectedProject.id}`, {
@@ -118,15 +143,13 @@ export default function ProjectsPage() {
         body: JSON.stringify({ status: newStatus }),
       });
       if (res.ok) {
-        const updated = await res.json();
         setSelectedProject({ ...selectedProject, status: newStatus });
         setProjects(projects.map(p => p.id === selectedProject.id ? { ...p, status: newStatus } : p));
         setEditingStatus(false);
-        setNotification('Status updated!');
-        setTimeout(() => setNotification(''), 3000);
+        notify('Status updated!');
       }
     } catch {
-      setNotification('Error updating status');
+      notify('Error updating status');
     }
   };
 
@@ -136,12 +159,11 @@ export default function ProjectsPage() {
       const res = await fetch(`/api/projects/${selectedProject.id}`, { method: 'DELETE' });
       if (res.ok) {
         setProjects(projects.filter(p => p.id !== selectedProject.id));
-        setSelectedProject(null);
-        setNotification('Project deleted!');
-        setTimeout(() => setNotification(''), 3000);
+        closeModal();
+        notify('Project deleted!');
       }
     } catch {
-      setNotification('Error deleting project');
+      notify('Error deleting project');
     }
   };
 
@@ -152,160 +174,277 @@ export default function ProjectsPage() {
 
   if (loading) return <div className="min-h-screen bg-[#080D1A]" />;
 
-  const statusColors: Record<string, string> = {
-    planning: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
-    in_progress: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
-    waiting: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40',
-    completed: 'bg-green-500/20 text-green-300 border-green-500/40',
-  };
-
   return (
     <div className="min-h-screen bg-[#080D1A]">
-      <header className="sticky top-0 z-20 backdrop-blur-xl bg-white/[0.03] border-b border-white/[0.07] px-4 md:px-6 py-4">
+      {/* Header */}
+      <header className="sticky top-0 z-20 backdrop-blur-xl bg-[#080D1A]/80 border-b border-white/[0.07] px-4 md:px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-white">Projects</h1>
-            <p className="text-white/40 text-sm">Manage your AI projects</p>
+            <h1 className="text-xl md:text-2xl font-bold text-white">Projects</h1>
+            <p className="text-white/40 text-sm hidden md:block">Manage your AI projects</p>
           </div>
-          <div className="flex items-center gap-3">
-            {user?.role !== 'viewer' && <button onClick={() => setShowNewForm(true)} className={btnGreen}>+ New Project</button>}
-            {user?.role === 'admin' && <button onClick={() => router.push('/admin/users')} className={btnBlue}>Users</button>}
-            <button onClick={handleLogout} className="px-4 py-2.5 text-white/60 hover:text-white transition-colors">Sign out</button>
+          <div className="flex items-center gap-2 md:gap-3">
+            {user?.role !== 'viewer' && (
+              <button onClick={() => setShowNewForm(v => !v)} className={btnGreen}>
+                + New
+              </button>
+            )}
+            {user?.role === 'admin' && (
+              <button onClick={() => router.push('/admin/users')} className={btnBlue}>
+                Users
+              </button>
+            )}
+            <button onClick={handleLogout} className="px-3 py-2.5 text-white/50 hover:text-white transition-colors text-sm">
+              Sign out
+            </button>
           </div>
         </div>
       </header>
 
-      {notification && <div className="fixed top-4 right-4 bg-[#8DC63F]/20 border border-[#8DC63F]/40 text-[#8DC63F] px-4 py-3 rounded-xl text-sm">{notification}</div>}
+      {/* Notification */}
+      {notification && (
+        <div className="fixed top-4 right-4 z-[100] bg-[#8DC63F]/20 border border-[#8DC63F]/40 text-[#8DC63F] px-4 py-3 rounded-xl text-sm shadow-lg">
+          {notification}
+        </div>
+      )}
 
       <main className="max-w-7xl mx-auto p-4 md:p-6">
+        {/* New project form */}
         {showNewForm && (
-          <div className={`mb-6 ${cardClass}`}>
+          <div className="mb-6 bg-white/[0.03] rounded-2xl border border-white/[0.07] p-5 md:p-6">
             <h3 className="text-lg font-semibold text-white mb-4">New Project</h3>
             <form onSubmit={handleCreateProject} className="space-y-4">
-              <input type="text" placeholder="Project title" value={newProject.title} onChange={(e) => setNewProject({ ...newProject, title: e.target.value })} className={inputClass} required />
-              <input type="text" placeholder="Pipedrive code (e.g., #260422z1)" value={newProject.pipedriveCode} onChange={(e) => setNewProject({ ...newProject, pipedriveCode: e.target.value })} className={inputClass} required />
-              <select value={newProject.status} onChange={(e) => setNewProject({ ...newProject, status: e.target.value as any })} className={selectClass}>
-                <option value="planning">Planning</option>
-                <option value="in_progress">In Progress</option>
-                <option value="waiting">Waiting</option>
-                <option value="completed">Completed</option>
-              </select>
+              <div>
+                <label className="text-white/50 text-xs mb-1 block">Project title</label>
+                <input type="text" placeholder="e.g. Sistem Inspectie Automata" value={newProject.title} onChange={(e) => setNewProject({ ...newProject, title: e.target.value })} className={inputClass} required />
+              </div>
+              <div>
+                <label className="text-white/50 text-xs mb-1 block">Pipedrive code</label>
+                <input type="text" placeholder="e.g. #260422z1" value={newProject.pipedriveCode} onChange={(e) => setNewProject({ ...newProject, pipedriveCode: e.target.value })} className={inputClass} required />
+              </div>
+              <div>
+                <label className="text-white/50 text-xs mb-1 block">Status</label>
+                <select value={newProject.status} onChange={(e) => setNewProject({ ...newProject, status: e.target.value as Status })} className={selectClass}>
+                  <option value="planning">Planning</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="waiting">Waiting</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </div>
               <div className="flex gap-2">
                 <button type="submit" className={btnGreen}>Create</button>
-                <button type="button" onClick={() => setShowNewForm(false)} className="px-4 py-2.5 bg-white/[0.05] border border-white/[0.1] text-white/60 rounded-xl text-sm font-medium hover:bg-white/[0.08] transition-colors">Cancel</button>
+                <button type="button" onClick={() => setShowNewForm(false)} className={btnGray}>Cancel</button>
               </div>
             </form>
           </div>
         )}
 
+        {/* Project cards grid */}
         {projects.length === 0 ? (
-          <div className={`text-center py-12 ${cardClass}`}>
-            <p className="text-white/40 mb-4">No projects yet</p>
-            {user?.role !== 'viewer' && <button onClick={() => setShowNewForm(true)} className={btnGreen}>Create your first project</button>}
+          <div className="text-center py-16 bg-white/[0.02] rounded-2xl border border-white/[0.07]">
+            <p className="text-white/40 mb-4 text-lg">No projects yet</p>
+            {user?.role !== 'viewer' && (
+              <button onClick={() => setShowNewForm(true)} className={btnGreen}>Create your first project</button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {projects.map((project) => (
-              <div key={project.id} onClick={() => handleSelectProject(project)} className={cardClass}>
-                <div className="flex items-start justify-between mb-3">
-                  <h3 className="text-lg font-semibold text-white flex-1">{project.title}</h3>
-                  <span className="text-[#00B4EF] font-mono text-sm">{project.pipedrive_code}</span>
+              <button
+                key={project.id}
+                onClick={() => openModal(project)}
+                className="text-left w-full bg-white/[0.03] rounded-2xl border border-white/[0.07] p-5 hover:bg-white/[0.06] hover:border-white/[0.12] transition-all focus:outline-none focus:ring-2 focus:ring-[#00B4EF]/40"
+              >
+                <div className="flex items-start justify-between mb-4 gap-2">
+                  <h3 className="text-base font-semibold text-white leading-tight flex-1">{project.title}</h3>
+                  <span className="text-[#00B4EF] font-mono text-xs bg-[#00B4EF]/10 px-2 py-1 rounded-lg border border-[#00B4EF]/20 shrink-0">
+                    {project.pipedrive_code}
+                  </span>
                 </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className={`px-3 py-1 rounded-lg border ${statusColors[project.status]}`}>{project.status}</span>
-                  <span className="text-white/40">{project.owner_name || 'Unassigned'}</span>
+                <div className="flex items-center justify-between">
+                  <span className={`px-2.5 py-1 rounded-lg border text-xs font-medium ${statusColors[project.status]}`}>
+                    {statusLabels[project.status]}
+                  </span>
+                  <span className="text-white/40 text-xs">{project.owner_name || 'Unassigned'}</span>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         )}
       </main>
 
+      {/* Modal */}
       {selectedProject && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className={`w-full max-w-2xl max-h-[90vh] overflow-y-auto ${cardClass}`}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-white">{selectedProject.title}</h2>
-              <button onClick={() => setSelectedProject(null)} className="text-white/60 hover:text-white">✕</button>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}
+        >
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+
+          {/* Modal content */}
+          <div className="relative z-10 w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-[#0D1422] rounded-2xl border border-white/[0.1] shadow-2xl">
+            {/* Modal header */}
+            <div className="sticky top-0 z-10 bg-[#0D1422] border-b border-white/[0.07] px-6 py-4 flex items-center justify-between">
+              <div className="flex-1 min-w-0 pr-4">
+                <h2 className="text-lg font-bold text-white truncate">{selectedProject.title}</h2>
+                <p className="text-[#00B4EF] font-mono text-sm">{selectedProject.pipedrive_code}</p>
+              </div>
+              <button
+                onClick={closeModal}
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-white/50 hover:text-white hover:bg-white/[0.08] transition-all shrink-0"
+              >
+                ✕
+              </button>
             </div>
 
-            <div className="space-y-4 mb-6">
+            <div className="p-6 space-y-6">
+              {/* Project info grid */}
               <div className="grid grid-cols-2 gap-4">
-                <div><p className="text-white/40 text-sm">Pipedrive Code</p><p className="text-white font-mono">{selectedProject.pipedrive_code}</p></div>
-                <div><p className="text-white/40 text-sm">Owner</p><p className="text-white">{selectedProject.owner_name || 'Unassigned'}</p></div>
-                <div><p className="text-white/40 text-sm">Created</p><p className="text-white text-sm">{new Date(selectedProject.created_at).toLocaleDateString()}</p></div>
+                <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
+                  <p className="text-white/40 text-xs mb-1">Owner</p>
+                  <p className="text-white text-sm font-medium">{selectedProject.owner_name || 'Unassigned'}</p>
+                </div>
+                <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
+                  <p className="text-white/40 text-xs mb-1">Created</p>
+                  <p className="text-white text-sm font-medium">{new Date(selectedProject.created_at).toLocaleDateString('ro-RO')}</p>
+                </div>
               </div>
 
-              <div>
-                <p className="text-white/40 text-sm mb-2">Status</p>
+              {/* Status section */}
+              <div className="bg-white/[0.03] rounded-xl p-4 border border-white/[0.05]">
+                <p className="text-white/40 text-xs mb-3">Status</p>
                 {editingStatus ? (
-                  <div className="flex gap-2">
-                    <select value={selectedProject.status} onChange={(e) => handleStatusChange(e.target.value as any)} className={selectClass}>
+                  <div className="flex items-center gap-2">
+                    <select
+                      defaultValue={selectedProject.status}
+                      onChange={(e) => handleStatusChange(e.target.value as Status)}
+                      className={selectClass}
+                      autoFocus
+                    >
                       <option value="planning">Planning</option>
                       <option value="in_progress">In Progress</option>
                       <option value="waiting">Waiting</option>
                       <option value="completed">Completed</option>
                     </select>
-                    <button onClick={() => setEditingStatus(false)} className="px-3 py-2 text-white/40 hover:text-white">Cancel</button>
+                    <button onClick={() => setEditingStatus(false)} className={btnGray}>Cancel</button>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2">
-                    <span className={`px-3 py-1 rounded-lg border ${statusColors[selectedProject.status]}`}>{selectedProject.status}</span>
-                    {user?.role !== 'viewer' && <button onClick={() => setEditingStatus(true)} className={btnBlue}>Change</button>}
+                  <div className="flex items-center gap-3">
+                    <span className={`px-3 py-1.5 rounded-lg border text-sm font-medium ${statusColors[selectedProject.status]}`}>
+                      {statusLabels[selectedProject.status]}
+                    </span>
+                    {user?.role !== 'viewer' && (
+                      <button onClick={() => setEditingStatus(true)} className={btnBlue}>
+                        Change
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
-            </div>
 
-            <div className="border-t border-white/[0.07] pt-4 mb-4">
-              <h3 className="text-lg font-semibold text-white mb-4">Timeline</h3>
-
-              {user?.role !== 'viewer' && (
-                <>
-                  {!showUpdateForm ? (
-                    <button onClick={() => setShowUpdateForm(true)} className={`${btnGreen} mb-4`}>+ Add Update</button>
-                  ) : (
-                    <form onSubmit={handleAddUpdate} className="space-y-3 mb-4 p-4 bg-white/[0.02] rounded-xl border border-white/[0.05]">
-                      <textarea placeholder="What was done?" value={newUpdate.whatDone} onChange={(e) => setNewUpdate({ ...newUpdate, whatDone: e.target.value })} className={inputClass} />
-                      <textarea placeholder="What are we waiting for?" value={newUpdate.whatWaiting} onChange={(e) => setNewUpdate({ ...newUpdate, whatWaiting: e.target.value })} className={inputClass} />
-                      <textarea placeholder="Next steps?" value={newUpdate.nextSteps} onChange={(e) => setNewUpdate({ ...newUpdate, nextSteps: e.target.value })} className={inputClass} />
-                      <div className="flex gap-2">
-                        <button type="submit" className={btnGreen}>Save</button>
-                        <button type="button" onClick={() => setShowUpdateForm(false)} className="px-4 py-2.5 bg-white/[0.05] border border-white/[0.1] text-white/60 rounded-xl text-sm font-medium hover:bg-white/[0.08] transition-colors">Cancel</button>
-                      </div>
-                    </form>
+              {/* Timeline section */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-base font-semibold text-white">Timeline</h3>
+                  {user?.role !== 'viewer' && !showUpdateForm && (
+                    <button onClick={() => setShowUpdateForm(true)} className={btnGreen}>
+                      + Add Update
+                    </button>
                   )}
-                </>
-              )}
+                </div>
 
-              <div className="space-y-3">
-                {updates.length === 0 ? (
-                  <p className="text-white/40 text-sm">No updates yet</p>
-                ) : (
-                  updates.map((update) => (
-                    <div key={update.id} className="bg-white/[0.02] rounded-xl border border-white/[0.05] p-4">
-                      <p className="text-white/40 text-xs mb-2">{new Date(update.created_at).toLocaleDateString()} • {update.author_name || 'Admin'}</p>
-                      {update.what_done && <p className="text-white text-sm mb-2"><span className="text-[#8DC63F]">Done:</span> {update.what_done}</p>}
-                      {update.what_waiting && <p className="text-white text-sm mb-2"><span className="text-yellow-400">Waiting:</span> {update.what_waiting}</p>}
-                      {update.next_steps && <p className="text-white text-sm"><span className="text-[#00B4EF]">Next:</span> {update.next_steps}</p>}
+                {showUpdateForm && (
+                  <form onSubmit={handleAddUpdate} className="mb-4 space-y-3 bg-white/[0.03] rounded-xl border border-white/[0.07] p-4">
+                    <div>
+                      <label className="text-white/50 text-xs mb-1 block">Ce s-a făcut?</label>
+                      <textarea
+                        placeholder="Descriere activități finalizate..."
+                        value={newUpdate.whatDone}
+                        onChange={(e) => setNewUpdate({ ...newUpdate, whatDone: e.target.value })}
+                        className={inputClass}
+                        rows={2}
+                      />
                     </div>
-                  ))
+                    <div>
+                      <label className="text-white/50 text-xs mb-1 block">Ce așteptăm de la client?</label>
+                      <textarea
+                        placeholder="Informații, acces, materiale..."
+                        value={newUpdate.whatWaiting}
+                        onChange={(e) => setNewUpdate({ ...newUpdate, whatWaiting: e.target.value })}
+                        className={inputClass}
+                        rows={2}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-white/50 text-xs mb-1 block">Next steps</label>
+                      <textarea
+                        placeholder="Ce urmează să facem..."
+                        value={newUpdate.nextSteps}
+                        onChange={(e) => setNewUpdate({ ...newUpdate, nextSteps: e.target.value })}
+                        className={inputClass}
+                        rows={2}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <button type="submit" className={btnGreen}>Save</button>
+                      <button type="button" onClick={() => setShowUpdateForm(false)} className={btnGray}>Cancel</button>
+                    </div>
+                  </form>
                 )}
-              </div>
-            </div>
 
-            {user?.role !== 'viewer' && (
-              <div className="border-t border-white/[0.07] pt-4">
-                {deleteConfirm ? (
-                  <div className="flex gap-2">
-                    <button onClick={handleDeleteProject} className={btnRed}>Confirm Delete</button>
-                    <button onClick={() => setDeleteConfirm(false)} className="px-4 py-2.5 bg-white/[0.05] border border-white/[0.1] text-white/60 rounded-xl text-sm font-medium">Cancel</button>
-                  </div>
-                ) : (
-                  <button onClick={() => setDeleteConfirm(true)} className={btnRed}>Delete Project</button>
-                )}
+                <div className="space-y-3">
+                  {updates.length === 0 ? (
+                    <p className="text-white/30 text-sm text-center py-4">No updates yet</p>
+                  ) : (
+                    updates.map((update) => (
+                      <div key={update.id} className="bg-white/[0.02] rounded-xl border border-white/[0.05] p-4 space-y-2">
+                        <p className="text-white/40 text-xs">
+                          {new Date(update.created_at).toLocaleDateString('ro-RO')} · {update.author_name || 'Admin'}
+                        </p>
+                        {update.what_done && (
+                          <div className="flex gap-2">
+                            <span className="text-[#8DC63F] text-xs font-medium shrink-0 mt-0.5">Done</span>
+                            <p className="text-white/80 text-sm">{update.what_done}</p>
+                          </div>
+                        )}
+                        {update.what_waiting && (
+                          <div className="flex gap-2">
+                            <span className="text-yellow-400 text-xs font-medium shrink-0 mt-0.5">Wait</span>
+                            <p className="text-white/80 text-sm">{update.what_waiting}</p>
+                          </div>
+                        )}
+                        {update.next_steps && (
+                          <div className="flex gap-2">
+                            <span className="text-[#00B4EF] text-xs font-medium shrink-0 mt-0.5">Next</span>
+                            <p className="text-white/80 text-sm">{update.next_steps}</p>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
-            )}
+
+              {/* Delete section */}
+              {user?.role !== 'viewer' && (
+                <div className="border-t border-white/[0.07] pt-4">
+                  {deleteConfirm ? (
+                    <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
+                      <p className="text-red-300 text-sm mb-3">Ești sigur că vrei să ștergi acest proiect? Acțiunea nu poate fi anulată.</p>
+                      <div className="flex gap-2">
+                        <button onClick={handleDeleteProject} className={btnRed}>Da, șterge</button>
+                        <button onClick={() => setDeleteConfirm(false)} className={btnGray}>Anulează</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => setDeleteConfirm(true)} className={btnRed}>
+                      Delete Project
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
