@@ -23,15 +23,15 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: "AI Project Tracker",
   description: "Track and manage AI projects with real-time updates, bottleneck tracking, and task checklists",
-  manifest: '/manifest.json',
+  manifest: '/manifest.json?v=2',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
     title: 'AI Tracker',
   },
   icons: {
-    icon: '/favicon-32x32.png',
-    apple: '/apple-touch-icon.png',
+    icon: '/favicon-32x32.png?v=2',
+    apple: '/apple-touch-icon.png?v=2',
   },
   openGraph: {
     type: 'website',
