@@ -30,8 +30,8 @@ export const metadata: Metadata = {
     title: 'AI Tracker',
   },
   icons: {
-    icon: '/favicon-32x32.png?v=2',
-    apple: '/apple-touch-icon.png?v=2',
+    icon: '/favicon-32x32.png',
+    apple: '/apple-touch-icon-v3.png',
   },
   openGraph: {
     type: 'website',
