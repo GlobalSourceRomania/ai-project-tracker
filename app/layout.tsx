@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -12,15 +12,17 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: '#00B4EF',
+};
+
 export const metadata: Metadata = {
   title: "AI Project Tracker",
   description: "Track and manage AI projects with real-time updates, bottleneck tracking, and task checklists",
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 1,
-    userScalable: false,
-  },
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
@@ -31,7 +33,6 @@ export const metadata: Metadata = {
     icon: '/favicon-32x32.png',
     apple: '/apple-touch-icon.png',
   },
-  themeColor: '#00B4EF',
   openGraph: {
     type: 'website',
     locale: 'en_US',
