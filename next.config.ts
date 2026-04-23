@@ -4,6 +4,13 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   compress: true,
   productionBrowserSourceMaps: false,
+  redirects: async () => [
+    {
+      source: '/',
+      destination: '/login',
+      permanent: false,
+    },
+  ],
   headers: async () => [
     {
       source: '/sw.js',
