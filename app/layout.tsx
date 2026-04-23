@@ -14,12 +14,35 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "AI Project Tracker",
-  description: "Track and manage AI projects",
+  description: "Track and manage AI projects with real-time updates, bottleneck tracking, and task checklists",
   viewport: {
     width: 'device-width',
     initialScale: 1,
     maximumScale: 1,
     userScalable: false,
+  },
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'AI Tracker',
+  },
+  icons: {
+    icon: '/favicon-32x32.png',
+    apple: '/apple-touch-icon.png',
+  },
+  themeColor: '#00B4EF',
+  openGraph: {
+    type: 'website',
+    locale: 'en_US',
+    url: 'https://globalsource-ai-tracking.vercel.app',
+    title: 'AI Project Tracker',
+    description: 'Track and manage AI projects with real-time updates',
+    images: [{
+      url: 'https://globalsource-ai-tracking.vercel.app/logo-512x512.png',
+      width: 512,
+      height: 512,
+    }],
   },
 };
 

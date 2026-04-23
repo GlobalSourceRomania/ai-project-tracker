@@ -1,0 +1,22 @@
+<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="gradDark" x1="0%" y1="0%" x2="120%" y2="120%">
+      <stop offset="0%" style="stop-color:#8DC63F;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#7BB830;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00B4EF;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Main logo shape - stylized G -->
+  <g filter="url(#shadow)">
+    <!-- Outer arc (green to blue) -->
+    <path d="M 64 40 Q 160 30 180 120 Q 185 145 170 165 L 140 150 Q 150 140 145 120 Q 130 60 64 80 Q 50 85 50 110 L 50 180 Q 50 210 80 215 Q 140 220 160 195"
+          fill="none" stroke="url(#gradDark)" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- Inner accent bar -->
+    <rect x="100" y="130" width="50" height="20" rx="10" fill="url(#gradDark)" opacity="0.8"/>
+  </g>
+</svg>

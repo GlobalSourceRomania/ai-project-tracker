@@ -24,6 +24,19 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const bottleneck = body.bottleneck !== undefined ? body.bottleneck : project.bottleneck ?? null;
 
     const updated = await updateProject(projectId, title, status, description, bottleneck);
+
+    // Send push notification asynchronously (don't block response)
+    fetch(`${request.nextUrl.protocol}//${request.nextUrl.host}/api/notifications/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: request.headers.get('cookie') || '' },
+      body: JSON.stringify({
+        projectId,
+        action: 'updated',
+        projectName: title,
+        changedBy: user.display_name || user.email,
+      }),
+    }).catch(() => {});
+
     return NextResponse.json({ ok: true, ...updated });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

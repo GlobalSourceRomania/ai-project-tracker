@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { registerServiceWorker, setupNotificationListener, type PushNotificationPayload } from '@/lib/service-worker-register';
+import NotificationPrompt from '@/components/NotificationPrompt';
 
 const inputClass = 'w-full bg-white/[0.06] border border-white/[0.1] rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-[#00B4EF]/70 focus:bg-white/[0.09] transition-all text-sm';
 const selectClass = 'w-full bg-[#111827] border border-white/[0.15] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00B4EF]/70 transition-all text-sm cursor-pointer';
@@ -94,6 +96,21 @@ export default function ProjectsPage() {
     };
     fetchData();
   }, [router]);
+
+  // Register service worker and setup push notifications
+  useEffect(() => {
+    registerServiceWorker();
+
+    // Listen for push notifications
+    setupNotificationListener((payload: PushNotificationPayload) => {
+      notify(`${payload.changedBy} ${payload.action} "${payload.projectName}"`);
+      // Refetch projects to show updates
+      fetch('/api/projects')
+        .then(r => r.ok ? r.json() : [])
+        .then(updatedProjects => setProjects(updatedProjects))
+        .catch(() => {});
+    });
+  }, []);
 
   const openModal = useCallback((project: Project) => {
     setSelectedProject(project);
@@ -321,6 +338,7 @@ export default function ProjectsPage() {
   if (loading) return <div className="min-h-screen bg-[#080D1A]" />;
 
   return (
+    <>
     <div className="min-h-screen bg-[#080D1A]">
       {/* Header */}
       <header className="sticky top-0 z-20 backdrop-blur-xl bg-[#080D1A]/80 border-b border-white/[0.07] px-4 md:px-6 py-4">
@@ -748,5 +766,7 @@ export default function ProjectsPage() {
         </div>
       )}
     </div>
+    <NotificationPrompt />
+  </>
   );
 }

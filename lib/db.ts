@@ -89,6 +89,17 @@ export async function initDB() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      endpoint TEXT NOT NULL UNIQUE,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
 }
 
 export async function getUserById(id: number) {
@@ -264,4 +275,32 @@ export async function toggleProjectTask(id: number, isDone: boolean) {
 export async function deleteProjectTask(id: number) {
   const sql = getDB();
   await sql`DELETE FROM project_tasks WHERE id = ${id}`;
+}
+
+export async function savePushSubscription(
+  userId: number,
+  subscription: { endpoint: string; keys: { p256dh: string; auth: string } }
+) {
+  const sql = getDB();
+  const result = await sql`
+    INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
+    VALUES (${userId}, ${subscription.endpoint}, ${subscription.keys.p256dh}, ${subscription.keys.auth})
+    ON CONFLICT (endpoint) DO UPDATE SET user_id = ${userId}
+    RETURNING id, user_id, endpoint, created_at
+  `;
+  return result[0];
+}
+
+export async function getPushSubscriptionsExcept(userId: number) {
+  const sql = getDB();
+  return sql`
+    SELECT id, user_id, endpoint, p256dh, auth FROM push_subscriptions
+    WHERE user_id != ${userId}
+    ORDER BY created_at DESC
+  `;
+}
+
+export async function deletePushSubscription(endpoint: string) {
+  const sql = getDB();
+  await sql`DELETE FROM push_subscriptions WHERE endpoint = ${endpoint}`;
 }
