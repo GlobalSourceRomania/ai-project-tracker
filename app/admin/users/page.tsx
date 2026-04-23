@@ -1,47 +1,80 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Sidebar from '@/components/Sidebar';
+import MobileTabBar from '@/components/MobileTabBar';
+import Icon from '@/components/Icon';
 
-const cardClass = 'bg-white/[0.03] rounded-2xl border border-white/[0.07] p-5 md:p-6';
-const inputClass = 'w-full bg-white/[0.06] border border-white/[0.1] rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-[#00B4EF]/70 focus:bg-white/[0.09] transition-all text-sm';
-const selectClass = 'bg-[#111827] border border-white/[0.15] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-[#00B4EF]/70 text-sm cursor-pointer';
-const selectFullClass = 'w-full bg-[#111827] border border-white/[0.15] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00B4EF]/70 text-sm cursor-pointer';
-const btnBlue = 'px-3 py-2 bg-[#00B4EF]/10 border border-[#00B4EF]/40 text-[#00B4EF] rounded-xl text-xs font-medium hover:bg-[#00B4EF]/20 transition-colors';
-const btnGreen = 'px-4 py-2.5 bg-[#8DC63F]/10 border border-[#8DC63F]/40 text-[#8DC63F] rounded-xl text-sm font-medium hover:bg-[#8DC63F]/20 transition-colors';
-const btnRed = 'px-3 py-2 bg-red-500/10 border border-red-500/40 text-red-400 rounded-xl text-xs font-medium hover:bg-red-500/20 transition-colors';
+type Role = 'admin' | 'editor' | 'viewer';
+type User = {
+  id: number;
+  email: string;
+  display_name: string;
+  role: Role;
+  created_at: string;
+};
+type Me = { id: number; email: string; display_name?: string; role: Role };
 
-type User = { id: number; email: string; display_name: string; role: 'admin' | 'editor' | 'viewer'; created_at: string };
+function initials(u: User) {
+  const n = (u.display_name && u.display_name.trim()) || u.email;
+  return (n[0] ?? '·').toUpperCase();
+}
+
+function formatRelative(iso?: string) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const diff = Date.now() - d.getTime();
+  const mins = Math.round(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  return d.toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
 
 export default function UsersPage() {
   const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
+  const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [notification, setNotification] = useState('');
-  const [newUser, setNewUser] = useState({ email: '', password: '', displayName: '', role: 'viewer' as const });
+  const [newUser, setNewUser] = useState({ email: '', password: '', displayName: '', role: 'viewer' as Role });
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
-  const [editingRole, setEditingRole] = useState<{ userId: number; role: 'admin' | 'editor' | 'viewer' } | null>(null);
+  const [editingRole, setEditingRole] = useState<{ userId: number; role: Role } | null>(null);
+  const [filter, setFilter] = useState<Role | 'all'>('all');
+
+  const notify = (msg: string) => {
+    setNotification(msg);
+    setTimeout(() => setNotification(''), 3000);
+  };
 
   useEffect(() => {
-    const fetchUsers = async () => {
+    const fetchAll = async () => {
       try {
-        const res = await fetch('/api/users');
-        if (res.status === 403) {
-          router.push('/projects');
-          return;
-        }
-        if (res.ok) setUsers(await res.json());
+        const [meRes, usersRes] = await Promise.all([fetch('/api/me'), fetch('/api/users')]);
+        if (meRes.status === 401) { router.push('/login'); return; }
+        if (usersRes.status === 403) { router.push('/projects'); return; }
+        if (meRes.ok) setMe(await meRes.json());
+        if (usersRes.ok) setUsers(await usersRes.json());
       } catch {
         console.error('Failed to fetch users');
       } finally {
         setLoading(false);
       }
     };
-    fetchUsers();
+    fetchAll();
   }, [router]);
 
-  const handleCreateUser = async (e: React.FormEvent) => {
+  const handleLogout = async () => {
+    await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'logout' }) });
+    router.push('/login');
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       const res = await fetch('/api/users', {
@@ -54,36 +87,30 @@ export default function UsersPage() {
         setUsers([...users, user]);
         setNewUser({ email: '', password: '', displayName: '', role: 'viewer' });
         setShowForm(false);
-        setNotification('User created!');
-        setTimeout(() => setNotification(''), 3000);
+        notify('User created!');
       } else {
-        const error = await res.json();
-        setNotification(error.error || 'Failed');
+        const data = await res.json().catch(() => ({}));
+        notify(data.error || 'Failed');
       }
-    } catch {
-      setNotification('Error creating user');
-    }
+    } catch { notify('Error creating user'); }
   };
 
-  const handleUpdateRole = async (userId: number, newRole: 'admin' | 'editor' | 'viewer') => {
+  const handleUpdateRole = async (userId: number, role: Role) => {
     try {
       const res = await fetch('/api/users', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, role: newRole }),
+        body: JSON.stringify({ userId, role }),
       });
       if (res.ok) {
-        setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
+        setUsers(users.map(u => u.id === userId ? { ...u, role } : u));
         setEditingRole(null);
-        setNotification('Role updated!');
-        setTimeout(() => setNotification(''), 3000);
+        notify('Role updated!');
       }
-    } catch {
-      setNotification('Error updating role');
-    }
+    } catch { notify('Error updating role'); }
   };
 
-  const handleDeleteUser = async (userId: number) => {
+  const handleDelete = async (userId: number) => {
     try {
       const res = await fetch('/api/users', {
         method: 'DELETE',
@@ -91,106 +118,221 @@ export default function UsersPage() {
         body: JSON.stringify({ userId }),
       });
       if (res.ok) {
-        setUsers(users.filter((u) => u.id !== userId));
+        setUsers(users.filter(u => u.id !== userId));
         setDeleteConfirm(null);
-        setNotification('User deleted!');
-        setTimeout(() => setNotification(''), 3000);
+        notify('User deleted!');
       }
-    } catch {
-      setNotification('Error deleting user');
-    }
+    } catch { notify('Error deleting user'); }
   };
 
-  if (loading) return <div className="min-h-screen bg-[#080D1A]" />;
+  const stats = useMemo(() => ({
+    total: users.length,
+    admins: users.filter(u => u.role === 'admin').length,
+    editors: users.filter(u => u.role === 'editor').length,
+    viewers: users.filter(u => u.role === 'viewer').length,
+  }), [users]);
+
+  const filtered = useMemo(() => {
+    if (filter === 'all') return users;
+    return users.filter(u => u.role === filter);
+  }, [users, filter]);
+
+  if (loading) return <div style={{ minHeight: '100vh' }} />;
 
   return (
-    <div className="min-h-screen bg-[#080D1A]">
-      <header className="sticky top-0 z-20 backdrop-blur-xl bg-white/[0.03] border-b border-white/[0.07] px-4 md:px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-white">User Management</h1>
-            <p className="text-white/40 text-sm">Manage accounts & roles</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <button onClick={() => setShowForm(true)} className={btnGreen}>+ New User</button>
-            <button onClick={() => router.push('/projects')} className={btnBlue}>Back</button>
-          </div>
-        </div>
-      </header>
+    <>
+      <div className="app">
+        <Sidebar
+          user={me}
+          userCount={users.length}
+          onLogout={handleLogout}
+        />
 
-      {notification && <div className="fixed top-4 right-4 bg-[#8DC63F]/20 border border-[#8DC63F]/40 text-[#8DC63F] px-4 py-3 rounded-xl text-sm">{notification}</div>}
+        <main className="main">
+          <div className="topbar">
+            <div style={{ minWidth: 0 }}>
+              <h1>User management</h1>
+              <div className="crumb">admin / users · {users.length} accounts</div>
+            </div>
+            <div style={{ flex: 1 }} />
+            <div style={{ display: 'flex', gap: 6 }}>
+              {(['all', 'admin', 'editor', 'viewer'] as const).map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setFilter(r)}
+                  className="btn sm"
+                  style={filter === r ? { background: 'var(--grad-soft)', borderColor: 'rgba(141,209,58,0.3)', color: 'var(--ink)' } : {}}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+            <button className="btn primary" onClick={() => setShowForm(v => !v)}>
+              <Icon id="plus" /> Invite user
+            </button>
+          </div>
 
-      <main className="max-w-7xl mx-auto p-4 md:p-6">
-        {showForm && (
-          <div className={`mb-6 ${cardClass}`}>
-            <h3 className="text-lg font-semibold text-white mb-4">Create New User</h3>
-            <form onSubmit={handleCreateUser} className="space-y-4">
-              <input type="email" placeholder="Email" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} className={inputClass} required />
-              <input type="password" placeholder="Password" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} className={inputClass} required />
-              <input type="text" placeholder="Display name" value={newUser.displayName} onChange={(e) => setNewUser({ ...newUser, displayName: e.target.value })} className={inputClass} required />
-              <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value as any })} className={selectFullClass}>
-                <option value="viewer">Viewer (read-only)</option>
-                <option value="editor">Editor</option>
-                <option value="admin">Admin</option>
-              </select>
-              <div className="flex gap-2">
-                <button type="submit" className={btnGreen}>Create User</button>
-                <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2.5 bg-white/[0.05] border border-white/[0.1] text-white/60 rounded-xl text-sm font-medium hover:bg-white/[0.08] transition-colors">Cancel</button>
+          <div className="stats">
+            <div className="stat">
+              <div className="l">Total</div>
+              <div className="n">{stats.total}</div>
+              <div className="spark" />
+            </div>
+            <div className="stat">
+              <div className="l">Admins</div>
+              <div className="n" style={{ color: 'var(--role-admin)' }}>{stats.admins}</div>
+              <div className="spark" />
+            </div>
+            <div className="stat">
+              <div className="l">Editors</div>
+              <div className="n" style={{ color: 'var(--role-editor)' }}>{stats.editors}</div>
+              <div className="spark" />
+            </div>
+            <div className="stat">
+              <div className="l">Viewers</div>
+              <div className="n" style={{ color: 'var(--role-viewer)' }}>{stats.viewers}</div>
+              <div className="spark" />
+            </div>
+          </div>
+
+          {showForm && (
+            <div style={{ padding: '18px 28px 0' }}>
+              <div className="card" style={{ padding: 20 }}>
+                <div className="display" style={{ fontSize: 18, fontWeight: 700, marginBottom: 14 }}>Invite user</div>
+                <form onSubmit={handleCreate} style={{ display: 'grid', gap: 12 }}>
+                  <div>
+                    <label className="label">Email</label>
+                    <input type="email" placeholder="you@globalsource.ro" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} className="input" required />
+                  </div>
+                  <div>
+                    <label className="label">Password</label>
+                    <input type="password" placeholder="••••••••" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} className="input" required />
+                  </div>
+                  <div>
+                    <label className="label">Display name</label>
+                    <input type="text" placeholder="Name shown in UI" value={newUser.displayName} onChange={(e) => setNewUser({ ...newUser, displayName: e.target.value })} className="input" required />
+                  </div>
+                  <div>
+                    <label className="label">Role</label>
+                    <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value as Role })} className="input">
+                      <option value="viewer">Viewer (read-only)</option>
+                      <option value="editor">Editor</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="submit" className="btn primary"><Icon id="plus" />Create</button>
+                    <button type="button" onClick={() => setShowForm(false)} className="btn">Cancel</button>
+                  </div>
+                </form>
               </div>
-            </form>
-          </div>
-        )}
+            </div>
+          )}
 
-        <div className={cardClass}>
-          <h3 className="text-lg font-semibold text-white mb-4">Users ({users.length})</h3>
-          <div className="space-y-2">
-            {users.length === 0 ? (
-              <p className="text-white/40 text-center py-6">No users yet</p>
-            ) : (
-              users.map((user) => (
-                <div key={user.id} className="flex items-center justify-between bg-white/[0.02] rounded-xl border border-white/[0.05] p-4">
-                  <div className="flex-1">
-                    <p className="text-white font-medium">{user.email}</p>
-                    <p className="text-white/50 text-sm">{user.display_name}</p>
+          <div style={{ padding: '20px 28px' }}>
+            <div className="utable">
+              <div className="utable-head">
+                <div>#</div>
+                <div>User</div>
+                <div>Role</div>
+                <div>Last seen</div>
+                <div style={{ textAlign: 'right' }} />
+              </div>
+
+              {filtered.length === 0 ? (
+                <div className="utable-row" style={{ gridTemplateColumns: '1fr' }}>
+                  <div style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 12 }}>No users match this filter.</div>
+                </div>
+              ) : filtered.map((u, idx) => (
+                <div key={u.id} className="utable-row">
+                  <div className="mono" style={{ color: 'var(--ink-3)', fontSize: 11 }}>
+                    {String(idx + 1).padStart(2, '0')}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                    <div className="u-avatar">{initials(u)}</div>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="u-name">{u.display_name || u.email.split('@')[0]}</div>
+                      <div className="u-email">{u.email}</div>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-3">
-                    {editingRole?.userId === user.id ? (
-                      <select value={editingRole.role} onChange={(e) => setEditingRole({ userId: user.id, role: e.target.value as any })} className={selectClass}>
+                  <div>
+                    {editingRole?.userId === u.id ? (
+                      <select
+                        className="input"
+                        style={{ padding: '6px 8px', fontSize: 12 }}
+                        value={editingRole.role}
+                        onChange={(e) => setEditingRole({ userId: u.id, role: e.target.value as Role })}
+                      >
                         <option value="viewer">Viewer</option>
                         <option value="editor">Editor</option>
                         <option value="admin">Admin</option>
                       </select>
                     ) : (
-                      <span className={`px-3 py-1 rounded-lg text-xs font-medium border ${user.role === 'admin' ? 'bg-red-500/20 text-red-300 border-red-500/40' : user.role === 'editor' ? 'bg-blue-500/20 text-blue-300 border-blue-500/40' : 'bg-white/[0.1] text-white/60 border-white/[0.2]'}`}>
-                        {user.role}
-                      </span>
+                      <span className={`chip role-${u.role}`}>{u.role}</span>
                     )}
+                  </div>
 
-                    {editingRole?.userId === user.id ? (
+                  <div className="mono" style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                    {formatRelative(u.created_at)}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                    {editingRole?.userId === u.id ? (
                       <>
-                        <button onClick={() => handleUpdateRole(user.id, editingRole.role)} className={btnGreen}>Save</button>
-                        <button onClick={() => setEditingRole(null)} className="px-3 py-2 text-white/40 hover:text-white text-xs">Cancel</button>
+                        <button className="btn sm primary" onClick={() => handleUpdateRole(u.id, editingRole.role)}>Save</button>
+                        <button className="btn sm" onClick={() => setEditingRole(null)}>Cancel</button>
+                      </>
+                    ) : deleteConfirm === u.id ? (
+                      <>
+                        <button className="btn sm danger" onClick={() => handleDelete(u.id)}>Confirm</button>
+                        <button className="btn sm" onClick={() => setDeleteConfirm(null)}>Cancel</button>
                       </>
                     ) : (
-                      <button onClick={() => setEditingRole({ userId: user.id, role: user.role })} className={btnBlue}>Change</button>
-                    )}
-
-                    {deleteConfirm === user.id ? (
                       <>
-                        <button onClick={() => handleDeleteUser(user.id)} className={btnRed}>Confirm</button>
-                        <button onClick={() => setDeleteConfirm(null)} className="px-3 py-2 text-white/40 hover:text-white text-xs">Cancel</button>
+                        <button
+                          className="btn sm"
+                          onClick={() => setEditingRole({ userId: u.id, role: u.role })}
+                          aria-label="Edit role"
+                        >
+                          <Icon id="edit" />
+                        </button>
+                        <button
+                          className="btn sm danger"
+                          onClick={() => setDeleteConfirm(u.id)}
+                          aria-label="Delete user"
+                        >
+                          <Icon id="trash" />
+                        </button>
                       </>
-                    ) : (
-                      <button onClick={() => setDeleteConfirm(user.id)} className={btnRed}>Delete</button>
                     )}
                   </div>
                 </div>
-              ))
-            )}
+              ))}
+            </div>
           </div>
+        </main>
+      </div>
+
+      <MobileTabBar role={me?.role} />
+
+      {notification && (
+        <div
+          style={{
+            position: 'fixed', top: 16, right: 16, zIndex: 100,
+            background: 'rgba(141,209,58,0.15)',
+            border: '1px solid rgba(141,209,58,0.4)',
+            color: 'var(--gs-green)',
+            padding: '10px 14px',
+            borderRadius: 10,
+            fontSize: 13,
+            boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+            maxWidth: 'calc(100vw - 32px)',
+          }}
+        >
+          {notification}
         </div>
-      </main>
-    </div>
+      )}
+    </>
   );
 }

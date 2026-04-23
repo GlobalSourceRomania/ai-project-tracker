@@ -1,42 +1,91 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { registerServiceWorker, setupNotificationListener, type PushNotificationPayload } from '@/lib/service-worker-register';
 import NotificationPrompt from '@/components/NotificationPrompt';
+import Sidebar from '@/components/Sidebar';
+import MobileTabBar from '@/components/MobileTabBar';
+import Icon from '@/components/Icon';
 
-const inputClass = 'w-full bg-white/[0.06] border border-white/[0.1] rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-[#00B4EF]/70 focus:bg-white/[0.09] transition-all text-sm';
-const selectClass = 'w-full bg-[#111827] border border-white/[0.15] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#00B4EF]/70 transition-all text-sm cursor-pointer';
-const btnBlue = 'px-4 py-2.5 bg-[#00B4EF]/10 border border-[#00B4EF]/40 text-[#00B4EF] rounded-xl text-sm font-medium hover:bg-[#00B4EF]/20 transition-colors';
-const btnGreen = 'px-4 py-2.5 bg-[#8DC63F]/10 border border-[#8DC63F]/40 text-[#8DC63F] rounded-xl text-sm font-medium hover:bg-[#8DC63F]/20 transition-colors';
-const btnRed = 'px-4 py-2.5 bg-red-500/10 border border-red-500/40 text-red-400 rounded-xl text-sm font-medium hover:bg-red-500/20 transition-colors';
-const btnGray = 'px-4 py-2.5 bg-white/[0.05] border border-white/[0.1] text-white/60 rounded-xl text-sm font-medium hover:bg-white/[0.08] transition-colors';
+type Status = 'planning' | 'in_progress' | 'waiting' | 'completed' | 'bottleneck';
 
-const statusColors: Record<string, string> = {
-  planning: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
-  in_progress: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
-  waiting: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40',
-  completed: 'bg-[#8DC63F]/20 text-[#8DC63F] border-[#8DC63F]/40',
-  bottleneck: 'bg-orange-500/20 text-orange-300 border-orange-500/40',
+type Project = {
+  id: number;
+  title: string;
+  pipedrive_code: string;
+  owner_id: number;
+  owner_name: string | null;
+  status: Status;
+  description: string | null;
+  bottleneck: string | null;
+  tasks_total?: number;
+  tasks_done?: number;
+  created_at: string;
+  updated_at: string;
 };
 
-const statusLabels: Record<string, string> = {
+type ProjectUpdate = {
+  id: number;
+  what_done: string | null;
+  what_waiting: string | null;
+  next_steps: string | null;
+  created_at: string;
+  author_name: string | null;
+};
+
+type Task = { id: number; project_id: number; title: string; is_done: boolean; created_at: string };
+type User = { id: number; email: string; display_name?: string; role: 'admin' | 'editor' | 'viewer' };
+
+const STATUS_LABEL: Record<Status, string> = {
   planning: 'Planning',
   in_progress: 'In Progress',
   waiting: 'Waiting',
-  completed: 'Completed',
   bottleneck: 'Bottleneck',
+  completed: 'Completed',
 };
 
-type Status = 'planning' | 'in_progress' | 'waiting' | 'completed' | 'bottleneck';
-type Project = {
-  id: number; title: string; pipedrive_code: string; owner_id: number; owner_name: string;
-  status: Status; description: string | null; bottleneck: string | null;
-  created_at: string; updated_at: string;
-};
-type ProjectUpdate = { id: number; what_done: string; what_waiting: string; next_steps: string; created_at: string; author_name: string };
-type Task = { id: number; project_id: number; title: string; is_done: boolean; created_at: string };
-type User = { id: number; email: string; role: 'admin' | 'editor' | 'viewer' };
+const KANBAN_COLUMNS: Status[] = ['planning', 'in_progress', 'waiting', 'bottleneck', 'completed'];
+
+function cardStatusClass(s: Status) {
+  if (s === 'in_progress') return 'st-progress';
+  if (s === 'completed') return 'st-done';
+  return `st-${s}`;
+}
+
+function progressOf(p: Project) {
+  if (p.tasks_total && p.tasks_total > 0) {
+    return Math.round(((p.tasks_done ?? 0) / p.tasks_total) * 100);
+  }
+  // fallback by status
+  if (p.status === 'completed') return 100;
+  if (p.status === 'planning') return 10;
+  if (p.status === 'in_progress') return 50;
+  if (p.status === 'waiting') return 45;
+  if (p.status === 'bottleneck') return 25;
+  return 0;
+}
+
+function formatDateRo(iso?: string) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function relativeTime(iso?: string) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const diff = Date.now() - d.getTime();
+  const mins = Math.round(diff / 60000);
+  if (mins < 1) return 'acum';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  return formatDateRo(iso);
+}
 
 export default function ProjectsPage() {
   const router = useRouter();
@@ -47,20 +96,17 @@ export default function ProjectsPage() {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [notification, setNotification] = useState('');
+  const [search, setSearch] = useState('');
 
   // New project form
   const [showNewForm, setShowNewForm] = useState(false);
   const [newProject, setNewProject] = useState({ title: '', pipedriveCode: '', status: 'planning' as Status, description: '', bottleneck: '' });
 
-  // Status editing
+  // Status / description / bottleneck editing
   const [editingStatus, setEditingStatus] = useState(false);
   const [pendingStatus, setPendingStatus] = useState<Status | null>(null);
-
-  // Description editing
   const [editingDescription, setEditingDescription] = useState(false);
   const [pendingDescription, setPendingDescription] = useState('');
-
-  // Bottleneck editing
   const [editingBottleneck, setEditingBottleneck] = useState(false);
   const [pendingBottleneck, setPendingBottleneck] = useState('');
 
@@ -75,6 +121,8 @@ export default function ProjectsPage() {
 
   // Delete project
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+
+  const canEdit = user?.role !== 'viewer';
 
   const notify = (msg: string) => {
     setNotification(msg);
@@ -97,17 +145,13 @@ export default function ProjectsPage() {
     fetchData();
   }, [router]);
 
-  // Register service worker and setup push notifications
   useEffect(() => {
     registerServiceWorker();
-
-    // Listen for push notifications
     setupNotificationListener((payload: PushNotificationPayload) => {
       notify(`${payload.changedBy} ${payload.action} "${payload.projectName}"`);
-      // Refetch projects to show updates
       fetch('/api/projects')
         .then(r => r.ok ? r.json() : [])
-        .then(updatedProjects => setProjects(updatedProjects))
+        .then((updatedProjects: Project[]) => setProjects(updatedProjects))
         .catch(() => {});
     });
   }, []);
@@ -138,15 +182,6 @@ export default function ProjectsPage() {
 
   const closeModal = useCallback(() => {
     setSelectedProject(null);
-    setEditingStatus(false);
-    setPendingStatus(null);
-    setEditingDescription(false);
-    setEditingBottleneck(false);
-    setDeleteConfirm(false);
-    setShowUpdateForm(false);
-    setEditingUpdate(null);
-    setDeleteUpdateConfirm(null);
-    setNewTaskTitle('');
     document.body.classList.remove('modal-open');
   }, []);
 
@@ -156,6 +191,30 @@ export default function ProjectsPage() {
     return () => window.removeEventListener('keydown', handler);
   }, [closeModal]);
 
+  // ---------- stats ----------
+  const stats = useMemo(() => {
+    const total = projects.length;
+    const active = projects.filter(p => p.status === 'in_progress').length;
+    const blocked = projects.filter(p => p.status === 'bottleneck').length;
+    const waiting = projects.filter(p => p.status === 'waiting').length;
+    const done = projects.filter(p => p.status === 'completed').length;
+    const completion = total === 0 ? 0 : Math.round((done / total) * 100);
+    return { total, active, blocked, waiting, done, completion };
+  }, [projects]);
+
+  // ---------- filtered projects (by search) ----------
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return projects;
+    return projects.filter(p =>
+      p.title.toLowerCase().includes(q) ||
+      p.pipedrive_code.toLowerCase().includes(q) ||
+      (p.owner_name ?? '').toLowerCase().includes(q) ||
+      (p.description ?? '').toLowerCase().includes(q),
+    );
+  }, [projects, search]);
+
+  // ---------- create/update project ----------
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -219,14 +278,14 @@ export default function ProjectsPage() {
   const handleSaveBottleneck = async () => {
     if (!selectedProject) return;
     const val = pendingBottleneck.trim() || null;
-    const newStatus = val ? 'bottleneck' : selectedProject.status;
+    const newStatus: Status = val ? 'bottleneck' : selectedProject.status;
     const res = await putProject({ bottleneck: val, status: newStatus });
     if (res) {
-      const updated = { ...selectedProject, bottleneck: val, status: newStatus as Status };
+      const updated = { ...selectedProject, bottleneck: val, status: newStatus };
       setSelectedProject(updated);
-      setProjects(projects.map(p => p.id === selectedProject.id ? { ...p, bottleneck: val, status: newStatus as Status } : p));
+      setProjects(projects.map(p => p.id === selectedProject.id ? { ...p, bottleneck: val, status: newStatus } : p));
       setEditingBottleneck(false);
-      notify(val ? 'Bottleneck salvat — status setat pe Bottleneck!' : 'Bottleneck cleared!');
+      notify(val ? 'Bottleneck saved — status set to Bottleneck' : 'Bottleneck cleared!');
     }
   };
 
@@ -256,7 +315,12 @@ export default function ProjectsPage() {
       const res = await fetch(`/api/projects/${selectedProject.id}/updates`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ updateId: editingUpdate.id, whatDone: editingUpdate.what_done, whatWaiting: editingUpdate.what_waiting, nextSteps: editingUpdate.next_steps }),
+        body: JSON.stringify({
+          updateId: editingUpdate.id,
+          whatDone: editingUpdate.what_done,
+          whatWaiting: editingUpdate.what_waiting,
+          nextSteps: editingUpdate.next_steps,
+        }),
       });
       if (res.ok) {
         setUpdates(updates.map(u => u.id === editingUpdate.id ? editingUpdate : u));
@@ -289,8 +353,10 @@ export default function ProjectsPage() {
       });
       if (res.ok) {
         const { task } = await res.json();
-        setTasks([...tasks, task]);
+        const newTasks = [...tasks, task];
+        setTasks(newTasks);
         setNewTaskTitle('');
+        bumpProjectTaskCounts(newTasks);
         notify('Task added!');
       }
     } catch { notify('Error adding task'); }
@@ -304,7 +370,11 @@ export default function ProjectsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ taskId, isDone }),
       });
-      if (res.ok) setTasks(tasks.map(t => t.id === taskId ? { ...t, is_done: isDone } : t));
+      if (res.ok) {
+        const newTasks = tasks.map(t => t.id === taskId ? { ...t, is_done: isDone } : t);
+        setTasks(newTasks);
+        bumpProjectTaskCounts(newTasks);
+      }
     } catch { notify('Error updating task'); }
   };
 
@@ -316,8 +386,21 @@ export default function ProjectsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ taskId }),
       });
-      if (res.ok) { setTasks(tasks.filter(t => t.id !== taskId)); notify('Task deleted!'); }
+      if (res.ok) {
+        const newTasks = tasks.filter(t => t.id !== taskId);
+        setTasks(newTasks);
+        bumpProjectTaskCounts(newTasks);
+        notify('Task deleted!');
+      }
     } catch { notify('Error deleting task'); }
+  };
+
+  // keep project card progress fresh when tasks mutate
+  const bumpProjectTaskCounts = (next: Task[]) => {
+    if (!selectedProject) return;
+    const total = next.length;
+    const done = next.filter(t => t.is_done).length;
+    setProjects(ps => ps.map(p => p.id === selectedProject.id ? { ...p, tasks_total: total, tasks_done: done } : p));
   };
 
   const handleDeleteProject = async () => {
@@ -333,440 +416,559 @@ export default function ProjectsPage() {
     router.push('/login');
   };
 
-  const doneTasks = tasks.filter(t => t.is_done).length;
+  if (loading) {
+    return (
+      <div className="app">
+        <div style={{ display: 'contents' }} />
+      </div>
+    );
+  }
 
-  if (loading) return <div className="min-h-screen bg-[#080D1A]" />;
+  const doneTasks = tasks.filter(t => t.is_done).length;
+  const selectedProgress = selectedProject ? progressOf({ ...selectedProject, tasks_total: tasks.length, tasks_done: doneTasks }) : 0;
 
   return (
     <>
-    <div className="min-h-screen bg-[#080D1A]">
-      {/* Header */}
-      <header className="sticky top-0 z-20 backdrop-blur-xl bg-[#080D1A]/80 border-b border-white/[0.07] px-4 md:px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div>
-            <h1 className="text-xl md:text-2xl font-bold text-white">Projects</h1>
-            <p className="text-white/40 text-sm hidden md:block">Manage your AI projects</p>
-          </div>
-          <div className="flex items-center gap-2 md:gap-3">
-            {user?.role !== 'viewer' && (
-              <button onClick={() => setShowNewForm(v => !v)} className={btnGreen}>+ New</button>
-            )}
-            {user?.role === 'admin' && (
-              <button onClick={() => router.push('/admin/users')} className={btnBlue}>Users</button>
-            )}
-            <button onClick={handleLogout} className="px-3 py-2.5 text-white/50 hover:text-white transition-colors text-sm">Sign out</button>
-          </div>
-        </div>
-      </header>
+      <div className="app">
+        <Sidebar
+          user={user}
+          projectCount={projects.length}
+          onLogout={handleLogout}
+        />
 
+        <main className="main">
+          {/* Topbar */}
+          <div className="topbar">
+            <div style={{ minWidth: 0 }}>
+              <h1>Projects</h1>
+              <div className="crumb">workspace / projects</div>
+            </div>
+            <div className="search">
+              <Icon id="search" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search projects, IDs, owners…"
+              />
+              <kbd>⌘K</kbd>
+            </div>
+            <button className="btn" aria-label="Notifications">
+              <Icon id="bell" />
+            </button>
+            {canEdit && (
+              <button className="btn primary" onClick={() => setShowNewForm(v => !v)}>
+                <Icon id="plus" />
+                <span className="hide-sm">New project</span>
+              </button>
+            )}
+          </div>
+
+          {/* Stats */}
+          <div id="stats" className="stats">
+            <div className="stat">
+              <div className="l">Active</div>
+              <div className="n" style={{ color: '#8dd13a' }}>{stats.active}</div>
+              <div className="spark" />
+            </div>
+            <div className="stat">
+              <div className="l">Bottleneck</div>
+              <div className="n" style={{ color: '#e8863a' }}>{stats.blocked}</div>
+              <div className="spark" />
+            </div>
+            <div className="stat">
+              <div className="l">Waiting</div>
+              <div className="n" style={{ color: '#e8a73a' }}>{stats.waiting}</div>
+              <div className="spark" />
+            </div>
+            <div className="stat grad">
+              <div className="l">Completion</div>
+              <div className="n">{stats.completion}%</div>
+              <div className="spark" />
+            </div>
+          </div>
+
+          {/* New project form */}
+          {showNewForm && (
+            <div style={{ padding: '18px 28px 0' }}>
+              <div className="card" style={{ padding: 20 }}>
+                <div className="display" style={{ fontSize: 18, fontWeight: 700, marginBottom: 14 }}>New project</div>
+                <form onSubmit={handleCreateProject} style={{ display: 'grid', gap: 12 }}>
+                  <div>
+                    <label className="label">Project title</label>
+                    <input type="text" placeholder="e.g. Sistem Inspectie Automata" value={newProject.title} onChange={(e) => setNewProject({ ...newProject, title: e.target.value })} className="input" required />
+                  </div>
+                  <div>
+                    <label className="label">Pipedrive code</label>
+                    <input type="text" placeholder="e.g. #260422z1" value={newProject.pipedriveCode} onChange={(e) => setNewProject({ ...newProject, pipedriveCode: e.target.value })} className="input" required />
+                  </div>
+                  <div>
+                    <label className="label">Status</label>
+                    <select value={newProject.status} onChange={(e) => setNewProject({ ...newProject, status: e.target.value as Status })} className="input">
+                      <option value="planning">Planning</option>
+                      <option value="in_progress">In Progress</option>
+                      <option value="waiting">Waiting</option>
+                      <option value="bottleneck">Bottleneck</option>
+                      <option value="completed">Completed</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Description (optional)</label>
+                    <textarea placeholder="Descriere generală a proiectului..." value={newProject.description} onChange={(e) => setNewProject({ ...newProject, description: e.target.value })} className="input" rows={2} />
+                  </div>
+                  <div>
+                    <label className="label">Bottleneck (optional)</label>
+                    <textarea placeholder="Punct de blocare curent..." value={newProject.bottleneck} onChange={(e) => setNewProject({ ...newProject, bottleneck: e.target.value })} className="input" rows={2} />
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="submit" className="btn primary"><Icon id="plus" />Create</button>
+                    <button type="button" onClick={() => setShowNewForm(false)} className="btn">Cancel</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Kanban */}
+          <div style={{ padding: '20px 0 0' }}>
+            <div className="kanban">
+              {KANBAN_COLUMNS.map((col) => {
+                const items = filtered.filter(p => p.status === col);
+                const colClass = col === 'in_progress' ? 'st-progress' : col === 'completed' ? 'st-done' : `st-${col}`;
+                const dotColor =
+                  col === 'in_progress' ? 'var(--gs-green)' :
+                  col === 'bottleneck'  ? 'var(--warn)' :
+                  col === 'completed'   ? 'var(--gs-blue)' :
+                  col === 'waiting'     ? '#e8a73a' :
+                                          'var(--ink-3)';
+                return (
+                  <div key={col} className="kanban-col">
+                    <div className={`kanban-head ${colClass}`}>
+                      <span className="hc" style={{ background: dotColor }} />
+                      <span className="ttl">{STATUS_LABEL[col]}</span>
+                      <span className="cnt">{items.length}</span>
+                    </div>
+
+                    {items.map(p => {
+                      const pct = progressOf(p);
+                      const segOn = Math.round(pct / 10);
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => openModal(p)}
+                          className={`card bold proj-card ${cardStatusClass(p.status)}`}
+                          style={{ textAlign: 'left', width: '100%', background: 'var(--surface)', cursor: 'pointer' }}
+                        >
+                          <div className="rail" />
+                          <div className="body">
+                            <div className="id-chip mono">#{p.pipedrive_code}</div>
+                            <div className="title">{p.title}</div>
+                            {p.bottleneck && (
+                              <div className="alert-strip">
+                                <Icon id="alert" size={12} />
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {p.bottleneck}
+                                </span>
+                              </div>
+                            )}
+                            <div className="progress segmented" aria-label={`Progress ${pct}%`}>
+                              {Array.from({ length: 10 }).map((_, i) => (
+                                <i key={i} className={i < segOn ? 'on' : ''} />
+                              ))}
+                            </div>
+                            <div className="btm">
+                              <div className="avatar" style={{ width: 22, height: 22, fontSize: 10 }}>
+                                {(p.owner_name ?? '·')[0]?.toUpperCase()}
+                              </div>
+                              <span className="owner">{p.owner_name ?? 'Unassigned'}</span>
+                              <span className="mono" style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--ink-3)' }}>{pct}%</span>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+
+                    {canEdit && (
+                      <button
+                        type="button"
+                        className="kanban-add"
+                        onClick={() => {
+                          setNewProject({ title: '', pipedriveCode: '', status: col, description: '', bottleneck: '' });
+                          setShowNewForm(true);
+                          if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                      >
+                        + add card
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {projects.length === 0 && (
+            <div style={{ padding: '40px 28px', textAlign: 'center' }}>
+              <div className="card" style={{ padding: 36 }}>
+                <div className="display" style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>No projects yet</div>
+                <div style={{ color: 'var(--ink-3)', fontSize: 13, marginBottom: 14 }}>Start tracking your AI integrations.</div>
+                {canEdit && (
+                  <button className="btn primary" onClick={() => setShowNewForm(true)}>
+                    <Icon id="plus" /> Create your first project
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+
+      {/* Mobile tab bar */}
+      <MobileTabBar role={user?.role} />
+
+      {/* FAB for new project (mobile) */}
+      {canEdit && (
+        <button
+          type="button"
+          className="fab"
+          aria-label="New project"
+          onClick={() => {
+            setShowNewForm(true);
+            if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+        >
+          +
+        </button>
+      )}
+
+      {/* Toast */}
       {notification && (
-        <div className="fixed top-4 right-4 z-[100] bg-[#8DC63F]/20 border border-[#8DC63F]/40 text-[#8DC63F] px-4 py-3 rounded-xl text-sm shadow-lg">
+        <div
+          style={{
+            position: 'fixed', top: 16, right: 16, zIndex: 100,
+            background: 'rgba(141,209,58,0.15)',
+            border: '1px solid rgba(141,209,58,0.4)',
+            color: 'var(--gs-green)',
+            padding: '10px 14px',
+            borderRadius: 10,
+            fontSize: 13,
+            boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+            maxWidth: 'calc(100vw - 32px)',
+          }}
+        >
           {notification}
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto p-4 md:p-6">
-        {/* New project form */}
-        {showNewForm && (
-          <div className="mb-6 bg-white/[0.03] rounded-2xl border border-white/[0.07] p-5 md:p-6">
-            <h3 className="text-lg font-semibold text-white mb-4">New Project</h3>
-            <form onSubmit={handleCreateProject} className="space-y-4">
-              <div>
-                <label className="text-white/50 text-xs mb-1 block">Project title</label>
-                <input type="text" placeholder="e.g. Sistem Inspectie Automata" value={newProject.title} onChange={(e) => setNewProject({ ...newProject, title: e.target.value })} className={inputClass} required />
-              </div>
-              <div>
-                <label className="text-white/50 text-xs mb-1 block">Pipedrive code</label>
-                <input type="text" placeholder="e.g. #260422z1" value={newProject.pipedriveCode} onChange={(e) => setNewProject({ ...newProject, pipedriveCode: e.target.value })} className={inputClass} required />
-              </div>
-              <div>
-                <label className="text-white/50 text-xs mb-1 block">Status</label>
-                <select value={newProject.status} onChange={(e) => setNewProject({ ...newProject, status: e.target.value as Status })} className={selectClass}>
-                  <option value="planning">Planning</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="waiting">Waiting</option>
-                  <option value="completed">Completed</option>
-                  <option value="bottleneck">Bottleneck</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-white/50 text-xs mb-1 block">Descriere (opțional)</label>
-                <textarea placeholder="Descriere generală a proiectului..." value={newProject.description} onChange={(e) => setNewProject({ ...newProject, description: e.target.value })} className={inputClass} rows={2} />
-              </div>
-              <div>
-                <label className="text-white/50 text-xs mb-1 block">Bottleneck (opțional)</label>
-                <textarea placeholder="Punct de blocare curent..." value={newProject.bottleneck} onChange={(e) => setNewProject({ ...newProject, bottleneck: e.target.value })} className={inputClass} rows={2} />
-              </div>
-              <div className="flex gap-2">
-                <button type="submit" className={btnGreen}>Create</button>
-                <button type="button" onClick={() => setShowNewForm(false)} className={btnGray}>Cancel</button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* Cards grid */}
-        {projects.length === 0 ? (
-          <div className="text-center py-16 bg-white/[0.02] rounded-2xl border border-white/[0.07]">
-            <p className="text-white/40 mb-4 text-lg">No projects yet</p>
-            {user?.role !== 'viewer' && (
-              <button onClick={() => setShowNewForm(true)} className={btnGreen}>Create your first project</button>
-            )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {projects.map((project) => (
-              <button
-                key={project.id}
-                onClick={() => openModal(project)}
-                className="text-left w-full bg-white/[0.03] rounded-2xl border border-white/[0.07] p-5 hover:bg-white/[0.06] hover:border-white/[0.12] transition-all focus:outline-none focus:ring-2 focus:ring-[#00B4EF]/40"
-              >
-                <div className="flex items-start justify-between mb-3 gap-2">
-                  <h3 className="text-base font-semibold text-white leading-tight flex-1">{project.title}</h3>
-                  <span className="text-[#00B4EF] font-mono text-xs bg-[#00B4EF]/10 px-2 py-1 rounded-lg border border-[#00B4EF]/20 shrink-0">
-                    {project.pipedrive_code}
-                  </span>
-                </div>
-                {project.description && (
-                  <p className="text-white/40 text-xs mb-3 line-clamp-2">{project.description}</p>
-                )}
-                {project.bottleneck && (
-                  <div className="flex items-center gap-1.5 mb-3">
-                    <span className="text-orange-400 text-xs">⚠</span>
-                    <p className="text-orange-300/70 text-xs line-clamp-1">{project.bottleneck}</p>
-                  </div>
-                )}
-                <div className="flex items-center justify-between">
-                  <span className={`px-2.5 py-1 rounded-lg border text-xs font-medium ${statusColors[project.status]}`}>
-                    {statusLabels[project.status]}
-                  </span>
-                  <span className="text-white/40 text-xs">{project.owner_name || 'Unassigned'}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </main>
-
       {/* Modal */}
       {selectedProject && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}>
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={closeModal} />
-
-          <div className="relative z-10 w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-[#0D1422] rounded-2xl border border-white/[0.1] shadow-2xl">
-            {/* Modal header */}
-            <div className="sticky top-0 z-10 bg-[#0D1422] border-b border-white/[0.07] px-6 py-4 flex items-center justify-between">
-              <div className="flex-1 min-w-0 pr-4">
-                <h2 className="text-lg font-bold text-white truncate">{selectedProject.title}</h2>
-                <p className="text-[#00B4EF] font-mono text-sm">{selectedProject.pipedrive_code}</p>
+        <div className="modal-backdrop" onClick={closeModal}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+                <span className="mono" style={{ fontSize: 11, color: 'var(--gs-blue)', letterSpacing: '0.05em' }}>
+                  #{selectedProject.pipedrive_code}
+                </span>
+                <span className={`chip ${cardStatusClass(selectedProject.status)}`}><span className="dot" />{STATUS_LABEL[selectedProject.status]}</span>
+                <div style={{ flex: 1 }} />
+                {canEdit && (
+                  <>
+                    <button
+                      className="btn sm"
+                      onClick={() => { setEditingStatus(true); setPendingStatus(selectedProject.status); }}
+                    >
+                      <Icon id="edit" /> Edit status
+                    </button>
+                    <button
+                      className="btn sm danger"
+                      onClick={() => setDeleteConfirm(true)}
+                    >
+                      <Icon id="trash" /> Delete
+                    </button>
+                  </>
+                )}
+                <button className="btn sm ghost" onClick={closeModal} aria-label="Close">
+                  <Icon id="close" />
+                </button>
               </div>
-              <button onClick={closeModal} className="w-8 h-8 flex items-center justify-center rounded-lg text-white/50 hover:text-white hover:bg-white/[0.08] transition-all shrink-0">✕</button>
+              <div className="display" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1.15, letterSpacing: '-0.015em' }}>
+                {selectedProject.title}
+              </div>
+              <div className="mono" style={{ display: 'flex', alignItems: 'center', gap: 18, marginTop: 12, fontSize: 11, color: 'var(--ink-3)', flexWrap: 'wrap' }}>
+                <span>owner · {selectedProject.owner_name ?? 'Unassigned'}</span>
+                <span>created · {formatDateRo(selectedProject.created_at)}</span>
+                <span>updated · {relativeTime(selectedProject.updated_at)}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 16 }}>
+                <div className="mono" style={{ fontSize: 10, color: 'var(--ink-3)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Progress</div>
+                <div className="progress" style={{ flex: 1, height: 8 }}>
+                  <span style={{ width: `${selectedProgress}%` }} />
+                </div>
+                <div className="mono" style={{ fontSize: 13, fontWeight: 700 }}>
+                  {selectedProgress}% · {doneTasks}/{tasks.length || 0}
+                </div>
+              </div>
+
+              {editingStatus && (
+                <div style={{ marginTop: 14, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <select
+                    className="input"
+                    style={{ maxWidth: 220 }}
+                    value={pendingStatus ?? selectedProject.status}
+                    onChange={(e) => setPendingStatus(e.target.value as Status)}
+                  >
+                    <option value="planning">Planning</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="waiting">Waiting</option>
+                    <option value="bottleneck">Bottleneck</option>
+                    <option value="completed">Completed</option>
+                  </select>
+                  <button className="btn primary sm" onClick={handleSaveStatus}>Save</button>
+                  <button className="btn sm" onClick={() => { setEditingStatus(false); setPendingStatus(null); }}>Cancel</button>
+                </div>
+              )}
+
+              {deleteConfirm && (
+                <div style={{ marginTop: 14, padding: 14, borderRadius: 10, border: '1px solid rgba(230,75,75,0.3)', background: 'rgba(230,75,75,0.08)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+                  <span style={{ color: '#f5a0a0', fontSize: 13 }}>Delete project permanently? This cannot be undone.</span>
+                  <button className="btn sm danger" onClick={handleDeleteProject}>Yes, delete</button>
+                  <button className="btn sm" onClick={() => setDeleteConfirm(false)}>Cancel</button>
+                </div>
+              )}
             </div>
 
-            <div className="p-6 space-y-5">
-              {/* Info grid */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
-                  <p className="text-white/40 text-xs mb-1">Owner</p>
-                  <p className="text-white text-sm font-medium">{selectedProject.owner_name || 'Unassigned'}</p>
-                </div>
-                <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.05]">
-                  <p className="text-white/40 text-xs mb-1">Created</p>
-                  <p className="text-white text-sm font-medium">{new Date(selectedProject.created_at).toLocaleDateString('ro-RO')}</p>
-                </div>
-              </div>
-
-              {/* Status */}
-              <div className="bg-white/[0.03] rounded-xl p-4 border border-white/[0.05]">
-                <p className="text-white/40 text-xs mb-3">Status</p>
-                {editingStatus ? (
-                  <div className="space-y-3">
-                    <select value={pendingStatus ?? selectedProject.status} onChange={(e) => setPendingStatus(e.target.value as Status)} className={selectClass}>
-                      <option value="planning">Planning</option>
-                      <option value="in_progress">In Progress</option>
-                      <option value="waiting">Waiting</option>
-                      <option value="completed">Completed</option>
-                      <option value="bottleneck">Bottleneck</option>
-                    </select>
-                    <div className="flex gap-2">
-                      <button onClick={handleSaveStatus} className={btnGreen}>Save</button>
-                      <button onClick={() => { setEditingStatus(false); setPendingStatus(null); }} className={btnGray}>Cancel</button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-3">
-                    <span className={`px-4 py-2.5 rounded-xl border text-sm font-medium ${statusColors[selectedProject.status]}`}>
-                      {statusLabels[selectedProject.status]}
-                    </span>
-                    {user?.role !== 'viewer' && (
-                      <button onClick={() => { setEditingStatus(true); setPendingStatus(selectedProject.status); }} className={btnBlue}>Change</button>
+            <div className="modal-body">
+              {/* LEFT */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {/* Description */}
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                    <div className="label" style={{ marginBottom: 0 }}>Description</div>
+                    {canEdit && !editingDescription && (
+                      <button
+                        className="btn sm ghost"
+                        onClick={() => { setEditingDescription(true); setPendingDescription(selectedProject.description ?? ''); }}
+                      >
+                        <Icon id="edit" size={12} /> Edit
+                      </button>
                     )}
                   </div>
-                )}
-              </div>
-
-              {/* Description */}
-              <div className="bg-white/[0.03] rounded-xl p-4 border border-white/[0.05]">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-white/40 text-xs">Descriere</p>
-                  {user?.role !== 'viewer' && !editingDescription && (
-                    <button onClick={() => { setEditingDescription(true); setPendingDescription(selectedProject.description || ''); }} className="text-[#00B4EF] text-xs hover:text-[#00B4EF]/80 transition-colors">Edit</button>
+                  {editingDescription ? (
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <textarea
+                        className="input"
+                        rows={3}
+                        value={pendingDescription}
+                        onChange={(e) => setPendingDescription(e.target.value)}
+                        placeholder="Descriere generală a proiectului..."
+                      />
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="btn primary sm" onClick={handleSaveDescription}>Save</button>
+                        <button className="btn sm" onClick={() => setEditingDescription(false)}>Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 14, lineHeight: 1.65, color: selectedProject.description ? 'var(--ink-2)' : 'var(--ink-3)' }}>
+                      {selectedProject.description || <em style={{ color: 'var(--ink-3)' }}>No description yet.</em>}
+                    </div>
                   )}
                 </div>
-                {editingDescription ? (
-                  <div className="space-y-3">
-                    <textarea
-                      value={pendingDescription}
-                      onChange={(e) => setPendingDescription(e.target.value)}
-                      placeholder="Descriere generală a proiectului..."
-                      className={inputClass}
-                      rows={3}
-                    />
-                    <div className="flex gap-2">
-                      <button onClick={handleSaveDescription} className={btnGreen}>Save</button>
-                      <button onClick={() => setEditingDescription(false)} className={btnGray}>Cancel</button>
-                    </div>
-                  </div>
-                ) : (
-                  <p className={selectedProject.description ? 'text-white/80 text-sm leading-relaxed' : 'text-white/25 text-sm italic'}>
-                    {selectedProject.description || 'Nicio descriere adăugată'}
-                  </p>
-                )}
-              </div>
 
-              {/* Bottleneck */}
-              <div className="bg-orange-500/[0.06] rounded-xl p-4 border border-orange-500/20">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-orange-400 text-sm">⚠</span>
-                    <p className="text-orange-300/70 text-xs">Bottleneck</p>
-                  </div>
-                  {user?.role !== 'viewer' && !editingBottleneck && (
-                    <button onClick={() => { setEditingBottleneck(true); setPendingBottleneck(selectedProject.bottleneck || ''); }} className="text-orange-400 text-xs hover:text-orange-300 transition-colors">Edit</button>
-                  )}
-                </div>
-                {editingBottleneck ? (
-                  <div className="space-y-3">
-                    <textarea
-                      value={pendingBottleneck}
-                      onChange={(e) => setPendingBottleneck(e.target.value)}
-                      placeholder="Punct de blocare curent..."
-                      className={inputClass}
-                      rows={3}
-                    />
-                    <div className="flex gap-2">
-                      <button onClick={handleSaveBottleneck} className={btnGreen}>Save</button>
-                      <button onClick={() => setEditingBottleneck(false)} className={btnGray}>Cancel</button>
-                    </div>
-                  </div>
-                ) : (
-                  <p className={selectedProject.bottleneck ? 'text-orange-200/80 text-sm leading-relaxed' : 'text-white/25 text-sm italic'}>
-                    {selectedProject.bottleneck || 'Niciun bottleneck identificat'}
-                  </p>
-                )}
-              </div>
-
-              {/* Tasks */}
-              <div className="bg-white/[0.03] rounded-xl p-4 border border-white/[0.05]">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <p className="text-white font-semibold text-sm">Pași / Tasks</p>
-                    {tasks.length > 0 && (
-                      <span className="text-white/40 text-xs">{doneTasks}/{tasks.length} completate</span>
+                {/* Bottleneck */}
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                    <div className="label" style={{ marginBottom: 0, color: 'var(--warn)' }}>Bottleneck</div>
+                    {canEdit && !editingBottleneck && (
+                      <button
+                        className="btn sm ghost"
+                        onClick={() => { setEditingBottleneck(true); setPendingBottleneck(selectedProject.bottleneck ?? ''); }}
+                      >
+                        <Icon id="edit" size={12} /> Edit
+                      </button>
                     )}
                   </div>
-                </div>
-
-                {/* Progress bar */}
-                {tasks.length > 0 && (
-                  <div className="h-1.5 bg-white/[0.06] rounded-full mb-4 overflow-hidden">
-                    <div
-                      className="h-full bg-[#8DC63F] rounded-full transition-all duration-300"
-                      style={{ width: `${(doneTasks / tasks.length) * 100}%` }}
-                    />
-                  </div>
-                )}
-
-                {/* Task list */}
-                <div className="space-y-2 mb-4">
-                  {tasks.length === 0 && (
-                    <p className="text-white/25 text-sm italic">Niciun pas adăugat</p>
-                  )}
-                  {tasks.map((task) => (
-                    <div key={task.id} className="flex items-center gap-3 group">
-                      {user?.role !== 'viewer' ? (
-                        <button
-                          onClick={() => handleToggleTask(task.id, !task.is_done)}
-                          className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-all ${
-                            task.is_done
-                              ? 'bg-[#8DC63F] border-[#8DC63F] text-white'
-                              : 'border-white/30 hover:border-[#8DC63F]/60'
-                          }`}
-                        >
-                          {task.is_done && <span className="text-xs leading-none">✓</span>}
-                        </button>
-                      ) : (
-                        <div className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 ${
-                          task.is_done ? 'bg-[#8DC63F] border-[#8DC63F] text-white' : 'border-white/20'
-                        }`}>
-                          {task.is_done && <span className="text-xs leading-none">✓</span>}
-                        </div>
-                      )}
-                      <span className={`flex-1 text-sm ${task.is_done ? 'line-through text-white/30' : 'text-white/80'}`}>
-                        {task.title}
-                      </span>
-                      {user?.role !== 'viewer' && (
-                        <button
-                          onClick={() => handleDeleteTask(task.id)}
-                          className="opacity-0 group-hover:opacity-100 text-red-400/60 hover:text-red-400 text-xs transition-all px-1"
-                        >
-                          ×
-                        </button>
-                      )}
+                  {editingBottleneck ? (
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <textarea
+                        className="input"
+                        rows={3}
+                        value={pendingBottleneck}
+                        onChange={(e) => setPendingBottleneck(e.target.value)}
+                        placeholder="Punct de blocare curent..."
+                      />
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="btn primary sm" onClick={handleSaveBottleneck}>Save</button>
+                        <button className="btn sm" onClick={() => setEditingBottleneck(false)}>Cancel</button>
+                      </div>
                     </div>
-                  ))}
+                  ) : selectedProject.bottleneck ? (
+                    <div className="bottleneck">
+                      <div className="lbl">
+                        <Icon id="alert" size={12} /> Bottleneck
+                      </div>
+                      <div className="txt">{selectedProject.bottleneck}</div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 13, color: 'var(--ink-3)' }}><em>No bottleneck identified.</em></div>
+                  )}
                 </div>
 
-                {/* Add task form */}
-                {user?.role !== 'viewer' && (
-                  <form onSubmit={handleAddTask} className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Adaugă un pas nou..."
-                      value={newTaskTitle}
-                      onChange={(e) => setNewTaskTitle(e.target.value)}
-                      className={`${inputClass} flex-1`}
-                    />
-                    <button type="submit" className={btnGreen}>+ Add</button>
-                  </form>
-                )}
+                {/* Tasks */}
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                    <div className="label" style={{ marginBottom: 0 }}>Pași / Tasks</div>
+                    <span className="chip st-progress" style={{ fontSize: 10 }}>{doneTasks}/{tasks.length}</span>
+                  </div>
+                  <div className="task-list">
+                    {tasks.length === 0 && (
+                      <div style={{ color: 'var(--ink-3)', fontSize: 13, padding: '8px 0' }}><em>No tasks yet.</em></div>
+                    )}
+                    {tasks.map((t) => (
+                      <div key={t.id} className={`task ${t.is_done ? 'done' : ''}`}>
+                        {canEdit ? (
+                          <button
+                            type="button"
+                            className={`checkbox ${t.is_done ? 'on' : ''}`}
+                            onClick={() => handleToggleTask(t.id, !t.is_done)}
+                            aria-label={t.is_done ? 'Mark not done' : 'Mark done'}
+                          />
+                        ) : (
+                          <div className={`checkbox ${t.is_done ? 'on' : ''}`} />
+                        )}
+                        <span className="task-text">{t.title}</span>
+                        {canEdit && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTask(t.id)}
+                            className="btn sm ghost"
+                            style={{ padding: 4, color: 'var(--ink-3)' }}
+                            aria-label="Delete task"
+                          >
+                            <Icon id="close" size={12} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {canEdit && (
+                    <form onSubmit={handleAddTask} style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+                      <input
+                        className="input"
+                        placeholder="Adaugă un pas nou…"
+                        value={newTaskTitle}
+                        onChange={(e) => setNewTaskTitle(e.target.value)}
+                      />
+                      <button type="submit" className="btn primary sm"><Icon id="plus" /></button>
+                    </form>
+                  )}
+                </div>
               </div>
 
-              {/* Timeline */}
+              {/* RIGHT — Timeline */}
               <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-base font-semibold text-white">Timeline</h3>
-                  {user?.role !== 'viewer' && !showUpdateForm && (
-                    <button onClick={() => setShowUpdateForm(true)} className={btnGreen}>+ Add Update</button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                  <div className="label" style={{ marginBottom: 0 }}>Timeline</div>
+                  <div style={{ flex: 1 }} />
+                  {canEdit && !showUpdateForm && (
+                    <button className="btn primary sm" onClick={() => setShowUpdateForm(true)}>
+                      <Icon id="plus" /> Update
+                    </button>
                   )}
                 </div>
 
                 {showUpdateForm && (
-                  <form onSubmit={handleAddUpdate} className="mb-4 space-y-3 bg-white/[0.03] rounded-xl border border-white/[0.07] p-4">
+                  <form onSubmit={handleAddUpdate} style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
                     <div>
-                      <label className="text-white/50 text-xs mb-1 block">Ce s-a făcut?</label>
-                      <textarea placeholder="Activități finalizate..." value={newUpdate.whatDone} onChange={(e) => setNewUpdate({ ...newUpdate, whatDone: e.target.value })} className={inputClass} rows={2} />
+                      <label className="label">Ce s-a făcut?</label>
+                      <textarea className="input" rows={2} value={newUpdate.whatDone} onChange={(e) => setNewUpdate({ ...newUpdate, whatDone: e.target.value })} />
                     </div>
                     <div>
-                      <label className="text-white/50 text-xs mb-1 block">Ce așteptăm de la client?</label>
-                      <textarea placeholder="Informații, acces, materiale..." value={newUpdate.whatWaiting} onChange={(e) => setNewUpdate({ ...newUpdate, whatWaiting: e.target.value })} className={inputClass} rows={2} />
+                      <label className="label">Ce așteptăm?</label>
+                      <textarea className="input" rows={2} value={newUpdate.whatWaiting} onChange={(e) => setNewUpdate({ ...newUpdate, whatWaiting: e.target.value })} />
                     </div>
                     <div>
-                      <label className="text-white/50 text-xs mb-1 block">Next steps</label>
-                      <textarea placeholder="Ce urmează..." value={newUpdate.nextSteps} onChange={(e) => setNewUpdate({ ...newUpdate, nextSteps: e.target.value })} className={inputClass} rows={2} />
+                      <label className="label">Next steps</label>
+                      <textarea className="input" rows={2} value={newUpdate.nextSteps} onChange={(e) => setNewUpdate({ ...newUpdate, nextSteps: e.target.value })} />
                     </div>
-                    <div className="flex gap-2">
-                      <button type="submit" className={btnGreen}>Save</button>
-                      <button type="button" onClick={() => setShowUpdateForm(false)} className={btnGray}>Cancel</button>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button type="submit" className="btn primary sm">Save</button>
+                      <button type="button" className="btn sm" onClick={() => setShowUpdateForm(false)}>Cancel</button>
                     </div>
                   </form>
                 )}
 
-                <div className="space-y-3">
-                  {updates.length === 0 ? (
-                    <p className="text-white/30 text-sm text-center py-6">No updates yet</p>
-                  ) : (
-                    updates.map((update) => (
-                      <div key={update.id} className="bg-white/[0.02] rounded-xl border border-white/[0.05] p-4">
-                        {editingUpdate?.id === update.id ? (
-                          <form onSubmit={handleSaveUpdate} className="space-y-3">
-                            <div>
-                              <label className="text-white/50 text-xs mb-1 block">Ce s-a făcut?</label>
-                              <textarea value={editingUpdate.what_done || ''} onChange={(e) => setEditingUpdate({ ...editingUpdate, what_done: e.target.value })} className={inputClass} rows={2} />
-                            </div>
-                            <div>
-                              <label className="text-white/50 text-xs mb-1 block">Ce așteptăm?</label>
-                              <textarea value={editingUpdate.what_waiting || ''} onChange={(e) => setEditingUpdate({ ...editingUpdate, what_waiting: e.target.value })} className={inputClass} rows={2} />
-                            </div>
-                            <div>
-                              <label className="text-white/50 text-xs mb-1 block">Next steps</label>
-                              <textarea value={editingUpdate.next_steps || ''} onChange={(e) => setEditingUpdate({ ...editingUpdate, next_steps: e.target.value })} className={inputClass} rows={2} />
-                            </div>
-                            <div className="flex gap-2">
-                              <button type="submit" className={btnGreen}>Save</button>
-                              <button type="button" onClick={() => setEditingUpdate(null)} className={btnGray}>Cancel</button>
-                            </div>
-                          </form>
-                        ) : (
-                          <>
-                            <div className="flex items-start justify-between mb-2">
-                              <p className="text-white/40 text-xs">{new Date(update.created_at).toLocaleDateString('ro-RO')} · {update.author_name || 'Admin'}</p>
-                              {user?.role !== 'viewer' && (
-                                <div className="flex gap-1 ml-2 shrink-0">
-                                  {deleteUpdateConfirm === update.id ? (
+                {updates.length === 0 ? (
+                  <div style={{ color: 'var(--ink-3)', fontSize: 13 }}><em>No updates yet.</em></div>
+                ) : (
+                  <div className="timeline">
+                    {updates.map((u, idx) => {
+                      const older = idx > 0;
+                      const editing = editingUpdate?.id === u.id;
+                      return (
+                        <div key={u.id} className={`timeline-item ${older ? 'older' : ''}`}>
+                          <div className="dot" />
+                          <div className="when">
+                            {formatDateRo(u.created_at)} · {u.author_name ?? 'Admin'}
+                          </div>
+                          {editing ? (
+                            <form onSubmit={handleSaveUpdate} style={{ display: 'grid', gap: 6, marginTop: 6 }}>
+                              <textarea className="input" rows={2} placeholder="Ce s-a făcut?" value={editingUpdate.what_done ?? ''} onChange={(e) => setEditingUpdate({ ...editingUpdate, what_done: e.target.value })} />
+                              <textarea className="input" rows={2} placeholder="Ce așteptăm?" value={editingUpdate.what_waiting ?? ''} onChange={(e) => setEditingUpdate({ ...editingUpdate, what_waiting: e.target.value })} />
+                              <textarea className="input" rows={2} placeholder="Next steps" value={editingUpdate.next_steps ?? ''} onChange={(e) => setEditingUpdate({ ...editingUpdate, next_steps: e.target.value })} />
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <button type="submit" className="btn primary sm">Save</button>
+                                <button type="button" className="btn sm" onClick={() => setEditingUpdate(null)}>Cancel</button>
+                              </div>
+                            </form>
+                          ) : (
+                            <>
+                              {u.what_done && (
+                                <div className="tl-row">
+                                  <span className="k st-done">DONE</span>
+                                  <span>{u.what_done}</span>
+                                </div>
+                              )}
+                              {u.what_waiting && (
+                                <div className="tl-row">
+                                  <span className="k st-waiting">WAIT</span>
+                                  <span>{u.what_waiting}</span>
+                                </div>
+                              )}
+                              {u.next_steps && (
+                                <div className="tl-row">
+                                  <span className="k" style={{ background: 'var(--blue-bg)', color: 'var(--gs-blue)' }}>NEXT</span>
+                                  <span>{u.next_steps}</span>
+                                </div>
+                              )}
+                              {canEdit && (
+                                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                                  {deleteUpdateConfirm === u.id ? (
                                     <>
-                                      <button onClick={() => handleDeleteUpdate(update.id)} className="px-2 py-1 bg-red-500/20 border border-red-500/40 text-red-400 rounded-lg text-xs hover:bg-red-500/30 transition-colors">Confirm</button>
-                                      <button onClick={() => setDeleteUpdateConfirm(null)} className="px-2 py-1 text-white/40 hover:text-white text-xs transition-colors">Cancel</button>
+                                      <button className="btn sm danger" onClick={() => handleDeleteUpdate(u.id)}>Confirm delete</button>
+                                      <button className="btn sm" onClick={() => setDeleteUpdateConfirm(null)}>Cancel</button>
                                     </>
                                   ) : (
                                     <>
-                                      <button onClick={() => setEditingUpdate(update)} className="px-2 py-1 bg-[#00B4EF]/10 border border-[#00B4EF]/30 text-[#00B4EF] rounded-lg text-xs hover:bg-[#00B4EF]/20 transition-colors">Edit</button>
-                                      <button onClick={() => setDeleteUpdateConfirm(update.id)} className="px-2 py-1 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg text-xs hover:bg-red-500/20 transition-colors">Del</button>
+                                      <button className="btn sm ghost" onClick={() => setEditingUpdate(u)}><Icon id="edit" size={12} /></button>
+                                      <button className="btn sm ghost" onClick={() => setDeleteUpdateConfirm(u.id)} style={{ color: 'var(--danger)' }}><Icon id="trash" size={12} /></button>
                                     </>
                                   )}
                                 </div>
                               )}
-                            </div>
-                            <div className="space-y-1.5">
-                              {update.what_done && (
-                                <div className="flex gap-2">
-                                  <span className="text-[#8DC63F] text-xs font-semibold shrink-0 w-10">Done</span>
-                                  <p className="text-white/80 text-sm">{update.what_done}</p>
-                                </div>
-                              )}
-                              {update.what_waiting && (
-                                <div className="flex gap-2">
-                                  <span className="text-yellow-400 text-xs font-semibold shrink-0 w-10">Wait</span>
-                                  <p className="text-white/80 text-sm">{update.what_waiting}</p>
-                                </div>
-                              )}
-                              {update.next_steps && (
-                                <div className="flex gap-2">
-                                  <span className="text-[#00B4EF] text-xs font-semibold shrink-0 w-10">Next</span>
-                                  <p className="text-white/80 text-sm">{update.next_steps}</p>
-                                </div>
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    ))
-                  )}
-                </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-
-              {/* Delete project */}
-              {user?.role !== 'viewer' && (
-                <div className="border-t border-white/[0.07] pt-4">
-                  {deleteConfirm ? (
-                    <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
-                      <p className="text-red-300 text-sm mb-3">Ești sigur că vrei să ștergi acest proiect? Acțiunea nu poate fi anulată.</p>
-                      <div className="flex gap-2">
-                        <button onClick={handleDeleteProject} className={btnRed}>Da, șterge</button>
-                        <button onClick={() => setDeleteConfirm(false)} className={btnGray}>Anulează</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <button onClick={() => setDeleteConfirm(true)} className={btnRed}>Delete Project</button>
-                  )}
-                </div>
-              )}
             </div>
           </div>
         </div>
       )}
-    </div>
-    <NotificationPrompt />
-  </>
+
+      <NotificationPrompt />
+    </>
   );
 }

@@ -170,9 +170,19 @@ export async function getProjectById(id: number) {
 export async function getAllProjects() {
   const sql = getDB();
   return sql`
-    SELECT p.*, u.display_name as owner_name
+    SELECT p.*,
+           u.display_name as owner_name,
+           COALESCE(t.total, 0)::int AS tasks_total,
+           COALESCE(t.done, 0)::int  AS tasks_done
     FROM projects p
     LEFT JOIN users u ON p.owner_id = u.id
+    LEFT JOIN (
+      SELECT project_id,
+             COUNT(*) AS total,
+             COUNT(*) FILTER (WHERE is_done) AS done
+      FROM project_tasks
+      GROUP BY project_id
+    ) t ON t.project_id = p.id
     ORDER BY p.created_at DESC
   `;
 }
