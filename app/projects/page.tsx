@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { registerServiceWorker, setupNotificationListener, type PushNotificationPayload } from '@/lib/service-worker-register';
+import { extractMentions, createMentionNotification } from '@/lib/mentions';
 import NotificationPrompt from '@/components/NotificationPrompt';
+import MentionInput from '@/components/MentionInput';
 import Sidebar from '@/components/Sidebar';
 import MobileTabBar from '@/components/MobileTabBar';
 import Icon from '@/components/Icon';
@@ -95,6 +97,7 @@ export default function ProjectsPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
+  const [users, setUsers] = useState<any[]>([]);
   const [notification, setNotification] = useState('');
   const [search, setSearch] = useState('');
 
@@ -132,10 +135,15 @@ export default function ProjectsPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [meRes, projectsRes] = await Promise.all([fetch('/api/me'), fetch('/api/projects')]);
+        const [meRes, projectsRes, usersRes] = await Promise.all([
+          fetch('/api/me'),
+          fetch('/api/projects'),
+          fetch('/api/users'),
+        ]);
         if (meRes.status === 401 || projectsRes.status === 401) { router.push('/login'); return; }
         if (meRes.ok) setUser(await meRes.json());
         if (projectsRes.ok) setProjects(await projectsRes.json());
+        if (usersRes.ok) setUsers(await usersRes.json());
       } catch {
         console.error('Failed to fetch data');
       } finally {
@@ -263,7 +271,7 @@ export default function ProjectsPage() {
   };
 
   const handleSaveDescription = async () => {
-    if (!selectedProject) return;
+    if (!selectedProject || !user) return;
     const val = pendingDescription.trim() || null;
     const res = await putProject({ description: val });
     if (res) {
@@ -271,12 +279,21 @@ export default function ProjectsPage() {
       setSelectedProject(updated);
       setProjects(projects.map(p => p.id === selectedProject.id ? { ...p, description: val } : p));
       setEditingDescription(false);
+
+      // Detect and notify mentions
+      if (val) {
+        const mentions = extractMentions(val);
+        for (const email of mentions) {
+          await createMentionNotification(email, user.id, selectedProject.id, selectedProject.title, 'description', val.substring(0, 100));
+        }
+      }
+
       notify('Description saved!');
     }
   };
 
   const handleSaveBottleneck = async () => {
-    if (!selectedProject) return;
+    if (!selectedProject || !user) return;
     const val = pendingBottleneck.trim() || null;
     const newStatus: Status = val ? 'bottleneck' : selectedProject.status;
     const res = await putProject({ bottleneck: val, status: newStatus });
@@ -285,13 +302,22 @@ export default function ProjectsPage() {
       setSelectedProject(updated);
       setProjects(projects.map(p => p.id === selectedProject.id ? { ...p, bottleneck: val, status: newStatus } : p));
       setEditingBottleneck(false);
+
+      // Detect and notify mentions
+      if (val) {
+        const mentions = extractMentions(val);
+        for (const email of mentions) {
+          await createMentionNotification(email, user.id, selectedProject.id, selectedProject.title, 'bottleneck', val.substring(0, 100));
+        }
+      }
+
       notify(val ? 'Bottleneck saved — status set to Bottleneck' : 'Bottleneck cleared!');
     }
   };
 
   const handleAddUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedProject) return;
+    if (!selectedProject || !user) return;
     try {
       const res = await fetch(`/api/projects/${selectedProject.id}/updates`, {
         method: 'POST',
@@ -301,6 +327,14 @@ export default function ProjectsPage() {
       if (res.ok) {
         const { update } = await res.json();
         setUpdates([update, ...updates]);
+
+        // Detect mentions in all update fields
+        const allText = `${newUpdate.whatDone} ${newUpdate.whatWaiting} ${newUpdate.nextSteps}`;
+        const mentions = extractMentions(allText);
+        for (const email of mentions) {
+          await createMentionNotification(email, user.id, selectedProject.id, selectedProject.title, 'update', allText.substring(0, 100));
+        }
+
         setNewUpdate({ whatDone: '', whatWaiting: '', nextSteps: '' });
         setShowUpdateForm(false);
         notify('Update added!');
@@ -752,13 +786,17 @@ export default function ProjectsPage() {
                   </div>
                   {editingDescription ? (
                     <div style={{ display: 'grid', gap: 8 }}>
-                      <textarea
-                        className="input"
-                        rows={3}
+                      <MentionInput
                         value={pendingDescription}
-                        onChange={(e) => setPendingDescription(e.target.value)}
-                        placeholder="Descriere generală a proiectului..."
+                        onChange={setPendingDescription}
+                        placeholder="Descriere generală a proiectului... (tip @ pentru a menține pe cineva)"
+                        isTextarea={true}
+                        users={users}
+                        className="input"
                       />
+                      <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: -4 }}>
+                        Tip <strong>@email</strong> pentru a menține pe cineva
+                      </div>
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button className="btn primary sm" onClick={handleSaveDescription}>Save</button>
                         <button className="btn sm" onClick={() => setEditingDescription(false)}>Cancel</button>
@@ -786,13 +824,17 @@ export default function ProjectsPage() {
                   </div>
                   {editingBottleneck ? (
                     <div style={{ display: 'grid', gap: 8 }}>
-                      <textarea
-                        className="input"
-                        rows={3}
+                      <MentionInput
                         value={pendingBottleneck}
-                        onChange={(e) => setPendingBottleneck(e.target.value)}
-                        placeholder="Punct de blocare curent..."
+                        onChange={setPendingBottleneck}
+                        placeholder="Punct de blocare curent... (tip @ pentru a menține pe cineva)"
+                        isTextarea={true}
+                        users={users}
+                        className="input"
                       />
+                      <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: -4 }}>
+                        Tip <strong>@email</strong> pentru a alertă colegul
+                      </div>
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button className="btn primary sm" onClick={handleSaveBottleneck}>Save</button>
                         <button className="btn sm" onClick={() => setEditingBottleneck(false)}>Cancel</button>
@@ -877,15 +919,15 @@ export default function ProjectsPage() {
                   <form onSubmit={handleAddUpdate} style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
                     <div>
                       <label className="label">Ce s-a făcut?</label>
-                      <textarea className="input" rows={2} value={newUpdate.whatDone} onChange={(e) => setNewUpdate({ ...newUpdate, whatDone: e.target.value })} />
+                      <MentionInput isTextarea value={newUpdate.whatDone} onChange={(v) => setNewUpdate({ ...newUpdate, whatDone: v })} users={users} />
                     </div>
                     <div>
                       <label className="label">Ce așteptăm?</label>
-                      <textarea className="input" rows={2} value={newUpdate.whatWaiting} onChange={(e) => setNewUpdate({ ...newUpdate, whatWaiting: e.target.value })} />
+                      <MentionInput isTextarea value={newUpdate.whatWaiting} onChange={(v) => setNewUpdate({ ...newUpdate, whatWaiting: v })} users={users} />
                     </div>
                     <div>
                       <label className="label">Next steps</label>
-                      <textarea className="input" rows={2} value={newUpdate.nextSteps} onChange={(e) => setNewUpdate({ ...newUpdate, nextSteps: e.target.value })} />
+                      <MentionInput isTextarea value={newUpdate.nextSteps} onChange={(v) => setNewUpdate({ ...newUpdate, nextSteps: v })} users={users} />
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button type="submit" className="btn primary sm">Save</button>
