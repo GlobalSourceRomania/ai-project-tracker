@@ -71,7 +71,7 @@ export default function LoginPage() {
           <span className="grad">AI projects tracking.</span>
         </h1>
         <p style={{ fontSize: 16, color: 'var(--ink-2)', maxWidth: 440, lineHeight: 1.6, marginTop: 20 }}>
-          Every Schaeffler integration, benchmark and bottleneck tracked in one place. Built by Global Source.
+          Every project change, update, or bottleneck in one place. Built by Global Source.
         </p>
         <div style={{ display: 'flex', gap: 28, marginTop: 32, flexWrap: 'wrap' }}>
           {[
