@@ -161,14 +161,21 @@ export default function UsersPage() {
                   key={r}
                   onClick={() => setFilter(r)}
                   className="btn sm"
+                  title={r}
                   style={filter === r ? { background: 'var(--grad-soft)', borderColor: 'rgba(141,209,58,0.3)', color: 'var(--ink)' } : {}}
                 >
-                  {r}
+                  <span style={{ display: 'none' }} className="sm-hide">{r}</span>
+                  <span style={{ display: 'block' }} className="sm-show">{r[0]?.toUpperCase()}</span>
                 </button>
               ))}
             </div>
-            <button className="btn primary" onClick={() => setShowForm(v => !v)}>
-              <Icon id="plus" /> Invite user
+            <button
+              className="btn primary"
+              onClick={() => setShowForm(v => !v)}
+              title="Invite user"
+            >
+              <Icon id="plus" />
+              <span style={{ display: 'none' }} className="sm-hide">Invite user</span>
             </button>
           </div>
 
@@ -196,8 +203,8 @@ export default function UsersPage() {
           </div>
 
           {showForm && (
-            <div style={{ padding: '18px 28px 0' }}>
-              <div className="card" style={{ padding: 20 }}>
+            <div className="form-container">
+              <div className="card form-card">
                 <div className="display" style={{ fontSize: 18, fontWeight: 700, marginBottom: 14 }}>Invite user</div>
                 <form onSubmit={handleCreate} style={{ display: 'grid', gap: 12 }}>
                   <div>
@@ -229,7 +236,7 @@ export default function UsersPage() {
             </div>
           )}
 
-          <div style={{ padding: '20px 28px' }}>
+          <div className="table-container">
             <div className="utable">
               <div className="utable-head">
                 <div>#</div>
