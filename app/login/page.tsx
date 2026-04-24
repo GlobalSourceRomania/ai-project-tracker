@@ -64,11 +64,11 @@ export default function LoginPage() {
             aria-hidden
             style={{ width: 6, height: 6, borderRadius: '50%', background: '#8dd13a', boxShadow: '0 0 8px #8dd13a' }}
           />
-          AI_TRACKER · V1.2
+          AI_TRACKER · V2.2
         </div>
         <h1 className="login-h">
-          Ship AI,<br />
-          <span className="grad">unblock the line.</span>
+          Global Source,<br />
+          <span className="grad">AI projects tracking.</span>
         </h1>
         <p style={{ fontSize: 16, color: 'var(--ink-2)', maxWidth: 440, lineHeight: 1.6, marginTop: 20 }}>
           Every Schaeffler integration, benchmark and bottleneck tracked in one place. Built by Global Source.

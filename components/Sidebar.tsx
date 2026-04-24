@@ -40,8 +40,8 @@ export default function Sidebar({ user, projectCount, userCount, onLogout }: Pro
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.svg" alt="Global Source" className="mark" />
         <div>
-          <div className="name">AI Tracker</div>
-          <div className="sub">Global Source</div>
+          <div className="name">Global Source</div>
+          <div className="sub">AI projects tracker</div>
         </div>
       </div>
 

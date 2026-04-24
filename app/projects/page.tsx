@@ -482,7 +482,6 @@ export default function ProjectsPage() {
           <div className="topbar">
             <div style={{ minWidth: 0 }}>
               <h1>Projects</h1>
-              <div className="crumb sm-hide">workspace / projects</div>
             </div>
             <div className="search">
               <Icon id="search" />
@@ -491,7 +490,6 @@ export default function ProjectsPage() {
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search projects, IDs, owners…"
               />
-              <kbd>⌘K</kbd>
             </div>
             {canEdit && (
               <button className="btn primary" onClick={() => setShowNewForm(v => !v)}>
