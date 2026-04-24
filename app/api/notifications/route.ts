@@ -32,18 +32,25 @@ export async function POST(request: Request) {
 
     // Case 2: Mention notification (any user mentioning someone)
     if (mentionedEmail && projectId && field && excerpt) {
+      console.log(`[MENTION] Processing mention for ${mentionedEmail} in project ${projectId} by user ${user.id}`);
       const mentionedUser = await getUserByEmail(mentionedEmail);
       if (!mentionedUser) {
+        console.log(`[MENTION] User not found for email: ${mentionedEmail}`);
         return Response.json({ error: 'User not found' }, { status: 404 });
       }
 
+      console.log(`[MENTION] Found user: ${mentionedUser.id} (${mentionedUser.email})`);
+
       // Don't notify if mentioning yourself
       if (mentionedUser.id === user.id) {
+        console.log(`[MENTION] Self-mention, skipping notification`);
         return Response.json({ success: true }, { status: 201 });
       }
 
       const mentionMsg = `mentioned you in ${projectName || 'a project'} (${field}): "${excerpt.substring(0, 50)}${excerpt.length > 50 ? '...' : ''}"`;
+      console.log(`[MENTION] Creating notification with message: ${mentionMsg}`);
       const notification = await createNotification(mentionedUser.id, 'mention', projectId, user.id, mentionMsg);
+      console.log(`[MENTION] Notification created: ${JSON.stringify(notification)}`);
       return Response.json({ notification }, { status: 201 });
     }
 

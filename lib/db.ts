@@ -123,7 +123,12 @@ export async function getUserById(id: number) {
 
 export async function getUserByEmail(email: string) {
   const sql = getDB();
-  const result = await sql`SELECT * FROM users WHERE email = ${email}`;
+  console.log(`[DB] Looking up user by email: ${email}`);
+  const result = await sql`SELECT * FROM users WHERE LOWER(email) = LOWER(${email})`;
+  console.log(`[DB] Found ${result.length} user(s) with email ${email}`);
+  if (result[0]) {
+    console.log(`[DB] User details: id=${result[0].id}, email=${result[0].email}, role=${result[0].role}`);
+  }
   return result[0] || null;
 }
 
@@ -331,11 +336,13 @@ export async function deletePushSubscription(endpoint: string) {
 // Notifications
 export async function createNotification(userId: number, type: 'mention' | 'change', projectId: number, authorId: number, message: string) {
   const sql = getDB();
+  console.log(`[DB] Creating notification: userId=${userId}, type=${type}, projectId=${projectId}, authorId=${authorId}, message=${message.substring(0, 50)}...`);
   const result = await sql`
     INSERT INTO notifications (user_id, type, project_id, author_id, message)
     VALUES (${userId}, ${type}, ${projectId}, ${authorId}, ${message})
     RETURNING *
   `;
+  console.log(`[DB] Notification created with id=${result[0]?.id}`);
   return result[0];
 }
 

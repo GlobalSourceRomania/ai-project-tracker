@@ -138,7 +138,7 @@ export default function ProjectsPage() {
         const [meRes, projectsRes, usersRes] = await Promise.all([
           fetch('/api/me'),
           fetch('/api/projects'),
-          fetch('/api/users'),
+          fetch('/api/users/list'),
         ]);
         if (meRes.status === 401 || projectsRes.status === 401) { router.push('/login'); return; }
         if (meRes.ok) setUser(await meRes.json());

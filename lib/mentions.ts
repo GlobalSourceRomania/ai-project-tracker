@@ -22,6 +22,7 @@ export async function createMentionNotification(
   excerpt: string
 ) {
   try {
+    console.log(`[MENTION-CLIENT] Creating notification for ${mentionedEmail}`);
     const res = await fetch('/api/notifications', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -35,8 +36,15 @@ export async function createMentionNotification(
         projectName,
       }),
     });
-    return res.ok;
-  } catch {
+    if (!res.ok) {
+      const error = await res.text();
+      console.error(`[MENTION-CLIENT] Failed to create notification: ${res.status} - ${error}`);
+      return false;
+    }
+    console.log(`[MENTION-CLIENT] Notification created successfully`);
+    return true;
+  } catch (err) {
+    console.error(`[MENTION-CLIENT] Error creating notification:`, err);
     return false;
   }
 }
