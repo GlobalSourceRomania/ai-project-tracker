@@ -33,7 +33,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Title and pipedrive code required' }, { status: 400 });
     }
 
-    const project = await createProject(title, pipedriveCode, user.id, status || 'planning', description, bottleneck);
+    // Always store with exactly one leading '#', regardless of what the user typed
+    const normalizedCode = '#' + String(pipedriveCode).replace(/^#+/, '');
+
+    const project = await createProject(title, normalizedCode, user.id, status || 'planning', description, bottleneck);
 
     // Notify all other users about new project (inbox + push)
     const authorName = user.display_name || user.email;
