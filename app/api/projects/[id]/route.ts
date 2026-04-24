@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getProjectById, updateProject, deleteProject, getCurrentUser, createChangeNotificationsForAll } from '@/lib/db';
+import { sendPushToAllExcept } from '@/lib/push';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,24 +26,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     const updated = await updateProject(projectId, title, status, description, bottleneck);
 
-    // Create inbox "change" notifications for all other users
+    // Create inbox "change" notifications for all other users + push
     const authorName = user.display_name || user.email;
     const changedField = body.status !== undefined && body.status !== project.status ? `status → ${body.status}` :
       body.description !== undefined && body.description !== project.description ? 'description' :
       body.bottleneck !== undefined && body.bottleneck !== project.bottleneck ? 'bottleneck' : 'project';
-    await createChangeNotificationsForAll(user.id, projectId, user.id, `${authorName} updated ${changedField} in "${title}"`);
-
-    // Send push notification asynchronously (don't block response)
-    fetch(`${request.nextUrl.protocol}//${request.nextUrl.host}/api/notifications/send`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Cookie: request.headers.get('cookie') || '' },
-      body: JSON.stringify({
-        projectId,
-        action: 'updated',
-        projectName: title,
-        changedBy: user.display_name || user.email,
-      }),
-    }).catch(() => {});
+    const changeMsg = `${authorName} updated ${changedField} in "${title}"`;
+    await createChangeNotificationsForAll(user.id, projectId, user.id, changeMsg);
+    sendPushToAllExcept(user.id, '✏️ Project Updated', changeMsg, { projectId }).catch(() => {});
 
     return NextResponse.json({ ok: true, ...updated });
   } catch (error) {

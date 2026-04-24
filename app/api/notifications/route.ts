@@ -1,5 +1,6 @@
 import { getCurrentUser, getUserByEmail } from '@/lib/db';
 import { getNotifications, createNotification, deleteOldNotifications } from '@/lib/db';
+import { sendPushToUser } from '@/lib/push';
 
 export async function GET(request: Request) {
   const user = await getCurrentUser(request);
@@ -47,10 +48,15 @@ export async function POST(request: Request) {
         return Response.json({ success: true }, { status: 201 });
       }
 
-      const mentionMsg = `mentioned you in ${projectName || 'a project'} (${field}): "${excerpt.substring(0, 50)}${excerpt.length > 50 ? '...' : ''}"`;
+      const authorName = user.display_name || user.email;
+      const mentionMsg = `${authorName} mentioned you in ${projectName || 'a project'} (${field}): "${excerpt.substring(0, 50)}${excerpt.length > 50 ? '...' : ''}"`;
       console.log(`[MENTION] Creating notification with message: ${mentionMsg}`);
       const notification = await createNotification(mentionedUser.id, 'mention', projectId, user.id, mentionMsg);
       console.log(`[MENTION] Notification created: ${JSON.stringify(notification)}`);
+
+      // Send push notification to mentioned user
+      sendPushToUser(mentionedUser.id, '🔔 You were mentioned', mentionMsg, { projectId }).catch(() => {});
+
       return Response.json({ notification }, { status: 201 });
     }
 

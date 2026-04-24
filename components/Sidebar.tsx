@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Icon from './Icon';
@@ -26,11 +27,32 @@ function displayName(u: User | null) {
 export default function Sidebar({ user, projectCount, userCount, onLogout }: Props) {
   const pathname = usePathname();
   const router = useRouter();
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const onProjects = pathname === '/projects' || pathname?.startsWith('/projects/');
   const onUsers = pathname === '/admin/users';
   const onStats = pathname === '/stats';
   const onInbox = pathname === '/inbox';
+
+  // Auto-fetch unread notification count — refresh every 30s
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    const fetchUnread = async () => {
+      try {
+        const res = await fetch('/api/notifications');
+        if (res.ok && !cancelled) {
+          const notifs: { is_read: boolean }[] = await res.json();
+          setUnreadCount(notifs.filter(n => !n.is_read).length);
+        }
+      } catch {}
+    };
+
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [user]);
 
   return (
     <aside className="sidebar">
@@ -71,6 +93,11 @@ export default function Sidebar({ user, projectCount, userCount, onLogout }: Pro
       >
         <Icon id="bell" />
         <span>Inbox</span>
+        {unreadCount > 0 && (
+          <span className="nav-count" style={{ background: 'var(--gs-blue)', color: '#fff' }}>
+            {unreadCount}
+          </span>
+        )}
       </Link>
 
       {user?.role === 'admin' && (

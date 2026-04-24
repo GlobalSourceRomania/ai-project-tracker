@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllProjects, createProject, getCurrentUser, createChangeNotificationsForAll } from '@/lib/db';
+import { sendPushToAllExcept } from '@/lib/push';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,9 +35,11 @@ export async function POST(request: NextRequest) {
 
     const project = await createProject(title, pipedriveCode, user.id, status || 'planning', description, bottleneck);
 
-    // Notify all other users about new project
+    // Notify all other users about new project (inbox + push)
     const authorName = user.display_name || user.email;
-    await createChangeNotificationsForAll(user.id, project.id, user.id, `${authorName} created project "${title}"`);
+    const changeMsg = `${authorName} created project "${title}"`;
+    await createChangeNotificationsForAll(user.id, project.id, user.id, changeMsg);
+    sendPushToAllExcept(user.id, '🆕 New Project', changeMsg, { projectId: project.id }).catch(() => {});
 
     return NextResponse.json({ ok: true, project });
   } catch (error) {

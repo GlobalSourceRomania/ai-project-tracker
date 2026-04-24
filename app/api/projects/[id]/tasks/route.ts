@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getProjectTasks, createProjectTask, toggleProjectTask, deleteProjectTask, getProjectById, getCurrentUser, createChangeNotificationsForAll } from '@/lib/db';
+import { sendPushToAllExcept } from '@/lib/push';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,9 +39,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const task = await createProjectTask(projectId, title.trim());
 
-    // Notify all other users about new task
+    // Notify all other users about new task (inbox + push)
     const authorName = user.display_name || user.email;
-    await createChangeNotificationsForAll(user.id, projectId, user.id, `${authorName} added task "${title.trim()}" in "${project.title}"`);
+    const taskMsg = `${authorName} added task "${title.trim()}" in "${project.title}"`;
+    await createChangeNotificationsForAll(user.id, projectId, user.id, taskMsg);
+    sendPushToAllExcept(user.id, '✅ New Task', taskMsg, { projectId }).catch(() => {});
 
     return NextResponse.json({ ok: true, task });
   } catch (error) {

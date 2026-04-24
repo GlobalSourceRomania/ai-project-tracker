@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Icon, { type IconId } from './Icon';
@@ -17,16 +17,36 @@ type Tab = {
 };
 
 const TABS: Tab[] = [
-  { key: 'projects', label: 'Projects', href: '/projects',   icon: 'board', match: p => p.startsWith('/projects') && !p.startsWith('/projects#') },
-  { key: 'stats',    label: 'Stats',    href: '/stats',      icon: 'stats', match: p => p.startsWith('/stats') },
-  { key: 'team',     label: 'Team',     href: '/admin/users', icon: 'users', match: p => p.startsWith('/admin/users'), adminOnly: true },
-  { key: 'inbox',    label: 'Inbox',    href: '/inbox',      icon: 'inbox', match: p => p.startsWith('/inbox') },
+  { key: 'projects', label: 'Projects', href: '/projects',    icon: 'board',  match: p => p.startsWith('/projects') },
+  { key: 'stats',    label: 'Stats',    href: '/stats',       icon: 'stats',  match: p => p.startsWith('/stats') },
+  { key: 'team',     label: 'Team',     href: '/admin/users', icon: 'users',  match: p => p.startsWith('/admin/users'), adminOnly: true },
+  { key: 'inbox',    label: 'Inbox',    href: '/inbox',       icon: 'inbox',  match: p => p.startsWith('/inbox') },
 ];
 
 export default function MobileTabBar({ role }: { role: Role }) {
   const pathname = usePathname() ?? '';
   const router = useRouter();
   const [showMenu, setShowMenu] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Auto-fetch unread count — refresh every 30s
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchUnread = async () => {
+      try {
+        const res = await fetch('/api/notifications');
+        if (res.ok && !cancelled) {
+          const notifs: { is_read: boolean }[] = await res.json();
+          setUnreadCount(notifs.filter(n => !n.is_read).length);
+        }
+      } catch {}
+    };
+
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
 
   const handleLogout = async () => {
     await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'logout' }) });
@@ -39,6 +59,7 @@ export default function MobileTabBar({ role }: { role: Role }) {
         {TABS.map(tab => {
           if (tab.adminOnly && role !== 'admin') return null;
           const active = tab.match(pathname);
+          const isInbox = tab.key === 'inbox';
           return (
             <Link
               key={tab.key}
@@ -46,7 +67,30 @@ export default function MobileTabBar({ role }: { role: Role }) {
               className={`tab ${active ? 'on' : ''}`}
               prefetch={false}
             >
-              <Icon id={tab.icon} size={20} />
+              <span style={{ position: 'relative', display: 'inline-flex' }}>
+                <Icon id={tab.icon} size={20} />
+                {isInbox && unreadCount > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    top: -4,
+                    right: -6,
+                    minWidth: 16,
+                    height: 16,
+                    borderRadius: 8,
+                    background: 'var(--gs-blue)',
+                    color: '#fff',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '0 3px',
+                    lineHeight: 1,
+                  }}>
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </span>
               {tab.label}
             </Link>
           );
