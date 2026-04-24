@@ -137,6 +137,23 @@ export async function getAllUsers() {
   return sql`SELECT id, email, display_name, role, created_at FROM users ORDER BY created_at DESC`;
 }
 
+export async function getAllUsersExcept(userId: number) {
+  const sql = getDB();
+  return sql`SELECT id, email, display_name FROM users WHERE id != ${userId}`;
+}
+
+export async function createChangeNotificationsForAll(excludeUserId: number, projectId: number, authorId: number, message: string) {
+  const sql = getDB();
+  const otherUsers = await sql`SELECT id FROM users WHERE id != ${excludeUserId}`;
+  if (otherUsers.length === 0) return;
+  for (const u of otherUsers) {
+    await sql`
+      INSERT INTO notifications (user_id, type, project_id, author_id, message)
+      VALUES (${u.id}, 'change', ${projectId}, ${authorId}, ${message})
+    `;
+  }
+}
+
 export async function createUser(email: string, password: string, displayName: string, role: 'admin' | 'editor' | 'viewer' = 'viewer') {
   const sql = getDB();
   const passwordHash = await bcryptjs.hash(password, 10);

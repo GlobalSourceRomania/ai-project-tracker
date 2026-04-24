@@ -1,15 +1,18 @@
-// Extract @mentions from text (e.g., "Hey @john.doe check this")
+// Extract @mentions from text (e.g., "Hey @john.doe@example.com check this")
+// Matches @<email> where email contains exactly one @ sign
 export function extractMentions(text: string): string[] {
-  const regex = /@([a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+)/g;
+  if (!text) return [];
+  // Matches @something@domain.tld — the full email after @
+  const regex = /@([^\s@]+@[^\s@]+\.[^\s@]+)/g;
   const matches = text.matchAll(regex);
-  const emails = Array.from(matches, m => m[1]);
+  const emails = Array.from(matches, m => m[1].replace(/[.,;!?]+$/, '')); // strip trailing punctuation
   return [...new Set(emails)]; // Remove duplicates
 }
 
 // Check if mentions exist in text
 export function hasMentions(text: string | null | undefined): boolean {
   if (!text) return false;
-  return /@[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+/.test(text);
+  return extractMentions(text).length > 0;
 }
 
 // Create notification for mentioned user

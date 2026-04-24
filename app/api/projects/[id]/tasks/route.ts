@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getProjectTasks, createProjectTask, toggleProjectTask, deleteProjectTask, getProjectById, getCurrentUser } from '@/lib/db';
+import { getProjectTasks, createProjectTask, toggleProjectTask, deleteProjectTask, getProjectById, getCurrentUser, createChangeNotificationsForAll } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,11 +29,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     const projectId = parseInt(id);
+    const project = await getProjectById(projectId);
+    if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+
     const body = await request.json();
     const { title } = body;
     if (!title?.trim()) return NextResponse.json({ error: 'Title required' }, { status: 400 });
 
     const task = await createProjectTask(projectId, title.trim());
+
+    // Notify all other users about new task
+    const authorName = user.display_name || user.email;
+    await createChangeNotificationsForAll(user.id, projectId, user.id, `${authorName} added task "${title.trim()}" in "${project.title}"`);
+
     return NextResponse.json({ ok: true, task });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

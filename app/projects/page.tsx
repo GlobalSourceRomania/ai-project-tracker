@@ -378,7 +378,7 @@ export default function ProjectsPage() {
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedProject || !newTaskTitle.trim()) return;
+    if (!selectedProject || !user || !newTaskTitle.trim()) return;
     try {
       const res = await fetch(`/api/projects/${selectedProject.id}/tasks`, {
         method: 'POST',
@@ -389,6 +389,13 @@ export default function ProjectsPage() {
         const { task } = await res.json();
         const newTasks = [...tasks, task];
         setTasks(newTasks);
+
+        // Detect @mentions in task title
+        const mentions = extractMentions(newTaskTitle);
+        for (const email of mentions) {
+          await createMentionNotification(email, user.id, selectedProject.id, selectedProject.title, 'update', `task: ${newTaskTitle.substring(0, 80)}`);
+        }
+
         setNewTaskTitle('');
         bumpProjectTaskCounts(newTasks);
         notify('Task added!');
@@ -891,12 +898,15 @@ export default function ProjectsPage() {
                   </div>
                   {canEdit && (
                     <form onSubmit={handleAddTask} style={{ marginTop: 10, display: 'flex', gap: 8 }}>
-                      <input
-                        className="input"
-                        placeholder="Adaugă un pas nou…"
-                        value={newTaskTitle}
-                        onChange={(e) => setNewTaskTitle(e.target.value)}
-                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <MentionInput
+                          value={newTaskTitle}
+                          onChange={setNewTaskTitle}
+                          placeholder="Adaugă un pas nou… (@ pentru tag)"
+                          users={users}
+                          className="input"
+                        />
+                      </div>
                       <button type="submit" className="btn primary sm"><Icon id="plus" /></button>
                     </form>
                   )}

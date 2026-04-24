@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllProjects, createProject, getCurrentUser } from '@/lib/db';
+import { getAllProjects, createProject, getCurrentUser, createChangeNotificationsForAll } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +33,11 @@ export async function POST(request: NextRequest) {
     }
 
     const project = await createProject(title, pipedriveCode, user.id, status || 'planning', description, bottleneck);
+
+    // Notify all other users about new project
+    const authorName = user.display_name || user.email;
+    await createChangeNotificationsForAll(user.id, project.id, user.id, `${authorName} created project "${title}"`);
+
     return NextResponse.json({ ok: true, project });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

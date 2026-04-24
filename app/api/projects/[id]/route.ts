@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getProjectById, updateProject, deleteProject, getCurrentUser } from '@/lib/db';
+import { getProjectById, updateProject, deleteProject, getCurrentUser, createChangeNotificationsForAll } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +24,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const bottleneck = body.bottleneck !== undefined ? body.bottleneck : project.bottleneck ?? null;
 
     const updated = await updateProject(projectId, title, status, description, bottleneck);
+
+    // Create inbox "change" notifications for all other users
+    const authorName = user.display_name || user.email;
+    const changedField = body.status !== undefined && body.status !== project.status ? `status → ${body.status}` :
+      body.description !== undefined && body.description !== project.description ? 'description' :
+      body.bottleneck !== undefined && body.bottleneck !== project.bottleneck ? 'bottleneck' : 'project';
+    await createChangeNotificationsForAll(user.id, projectId, user.id, `${authorName} updated ${changedField} in "${title}"`);
 
     // Send push notification asynchronously (don't block response)
     fetch(`${request.nextUrl.protocol}//${request.nextUrl.host}/api/notifications/send`, {

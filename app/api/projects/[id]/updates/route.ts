@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getProjectUpdates, createProjectUpdate, deleteProjectUpdate, getProjectById, getCurrentUser } from '@/lib/db';
+import { getProjectUpdates, createProjectUpdate, deleteProjectUpdate, getProjectById, getCurrentUser, createChangeNotificationsForAll } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,6 +42,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const { whatDone, whatWaiting, nextSteps } = body;
 
     const update = await createProjectUpdate(projectId, user.id, whatDone, whatWaiting, nextSteps);
+
+    // Notify all other users about new update
+    const authorName = user.display_name || user.email;
+    const snippet = (whatDone || whatWaiting || nextSteps || '').substring(0, 60);
+    await createChangeNotificationsForAll(user.id, projectId, user.id, `${authorName} posted an update in "${project.title}"${snippet ? ': ' + snippet : ''}`);
+
     return NextResponse.json({ ok: true, update });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
