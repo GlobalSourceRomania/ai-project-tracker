@@ -452,9 +452,6 @@ export default function ProjectsPage() {
               />
               <kbd>⌘K</kbd>
             </div>
-            <button className="btn" aria-label="Notifications">
-              <Icon id="bell" />
-            </button>
             {canEdit && (
               <button className="btn primary" onClick={() => setShowNewForm(v => !v)}>
                 <Icon id="plus" />

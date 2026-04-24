@@ -55,6 +55,24 @@ export default function Sidebar({ user, projectCount, userCount, onLogout }: Pro
         {typeof projectCount === 'number' && <span className="nav-count">{projectCount}</span>}
       </Link>
 
+      <Link
+        href="/stats"
+        className={`nav-item ${onStats ? 'active' : ''}`}
+        prefetch={false}
+      >
+        <Icon id="chart" />
+        <span>Statistics</span>
+      </Link>
+
+      <Link
+        href="/inbox"
+        className={`nav-item ${onInbox ? 'active' : ''}`}
+        prefetch={false}
+      >
+        <Icon id="bell" />
+        <span>Inbox</span>
+      </Link>
+
       {user?.role === 'admin' && (
         <Link
           href="/admin/users"
