@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import Icon from './Icon';
 
 type User = { id: number; email: string; display_name?: string };
@@ -14,6 +15,8 @@ type MentionInputProps = {
   users: User[];
 };
 
+type DropdownPos = { top: number; left: number; width: number };
+
 export default function MentionInput({
   value,
   onChange,
@@ -25,7 +28,32 @@ export default function MentionInput({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestions, setSuggestions] = useState<User[]>([]);
   const [cursorPos, setCursorPos] = useState(0);
+  const [dropdownPos, setDropdownPos] = useState<DropdownPos | null>(null);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+
+  // Recalculate dropdown position based on input's current bounding rect
+  const updateDropdownPos = useCallback(() => {
+    if (inputRef.current) {
+      const rect = inputRef.current.getBoundingClientRect();
+      setDropdownPos({
+        top: rect.bottom + window.scrollY + 4,
+        left: rect.left + window.scrollX,
+        width: rect.width,
+      });
+    }
+  }, []);
+
+  // Reposition dropdown on scroll / resize so it tracks the input
+  useEffect(() => {
+    if (!showSuggestions) return;
+    updateDropdownPos();
+    window.addEventListener('scroll', updateDropdownPos, true);
+    window.addEventListener('resize', updateDropdownPos);
+    return () => {
+      window.removeEventListener('scroll', updateDropdownPos, true);
+      window.removeEventListener('resize', updateDropdownPos);
+    };
+  }, [showSuggestions, updateDropdownPos]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const newValue = e.currentTarget.value;
@@ -34,24 +62,27 @@ export default function MentionInput({
     onChange(newValue);
     setCursorPos(pos);
 
-    // Check if @ was just typed
     const lastChar = newValue[pos - 1];
     if (lastChar === '@') {
       setShowSuggestions(true);
       setSuggestions(users);
+      updateDropdownPos();
     } else if (lastChar === ' ' || lastChar === '\n') {
       setShowSuggestions(false);
     } else if (showSuggestions) {
-      // Filter suggestions based on what's typed after @
       const beforeCursor = newValue.substring(0, pos);
       const lastAtIndex = beforeCursor.lastIndexOf('@');
       if (lastAtIndex !== -1) {
         const searchText = beforeCursor.substring(lastAtIndex + 1).toLowerCase();
         const filtered = users.filter(
-          u => u.email.toLowerCase().includes(searchText) ||
-               u.display_name?.toLowerCase().includes(searchText)
+          u =>
+            u.email.toLowerCase().includes(searchText) ||
+            u.display_name?.toLowerCase().includes(searchText),
         );
         setSuggestions(filtered);
+        if (filtered.length === 0) setShowSuggestions(false);
+      } else {
+        setShowSuggestions(false);
       }
     }
   };
@@ -67,7 +98,6 @@ export default function MentionInput({
       onChange(newValue);
       setShowSuggestions(false);
 
-      // Focus input and move cursor
       setTimeout(() => {
         if (inputRef.current) {
           inputRef.current.focus();
@@ -78,83 +108,97 @@ export default function MentionInput({
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') setShowSuggestions(false);
+  };
+
   const Element = isTextarea ? 'textarea' : 'input';
 
+  // Dropdown rendered as a portal so it's never clipped by overflow:hidden parents
+  const dropdown =
+    showSuggestions && suggestions.length > 0 && dropdownPos
+      ? createPortal(
+          <div
+            style={{
+              position: 'absolute',
+              top: dropdownPos.top,
+              left: dropdownPos.left,
+              width: dropdownPos.width,
+              minWidth: 240,
+              background: 'var(--surface)',
+              border: '1px solid var(--line)',
+              borderRadius: 10,
+              maxHeight: 220,
+              overflowY: 'auto',
+              zIndex: 99999,
+              boxShadow: '0 16px 40px rgba(0,0,0,0.5)',
+            }}
+            // Prevent blur on input when clicking dropdown items
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            {suggestions.map(user => (
+              <div
+                key={user.id}
+                onClick={() => insertMention(user)}
+                style={{
+                  padding: '10px 12px',
+                  borderBottom: '1px solid var(--line)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  transition: 'background .12s',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <div
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: '50%',
+                    background: 'var(--grad)',
+                    color: '#07090d',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    flexShrink: 0,
+                  }}
+                >
+                  {(user.display_name || user.email)[0]?.toUpperCase()}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
+                    {user.display_name || user.email.split('@')[0]}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {user.email}
+                  </div>
+                </div>
+                <Icon id="plus" size={14} style={{ color: 'var(--ink-3)', flexShrink: 0 }} />
+              </div>
+            ))}
+          </div>,
+          document.body,
+        )
+      : null;
+
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative', width: '100%' }}>
       <Element
         ref={inputRef as any}
         type={isTextarea ? undefined : 'text'}
         value={value}
         onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
         placeholder={placeholder}
         className={className || 'input'}
-        style={{ position: 'relative', zIndex: 1 }}
+        style={{ width: '100%' }}
       />
-
-      {showSuggestions && suggestions.length > 0 && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            right: 0,
-            background: 'var(--surface)',
-            border: '1px solid var(--line)',
-            borderRadius: 8,
-            maxHeight: 200,
-            overflowY: 'auto',
-            zIndex: 50,
-            marginTop: 4,
-            boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
-          }}
-        >
-          {suggestions.map(user => (
-            <div
-              key={user.id}
-              onClick={() => insertMention(user)}
-              style={{
-                padding: '10px 12px',
-                borderBottom: '1px solid var(--line)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                transition: 'background .15s',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-            >
-              <div
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: '50%',
-                  background: 'var(--grad)',
-                  color: '#07090d',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  flexShrink: 0,
-                }}
-              >
-                {(user.display_name || user.email)[0]?.toUpperCase()}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
-                  {user.display_name || user.email.split('@')[0]}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-                  {user.email}
-                </div>
-              </div>
-              <Icon id="plus" size={14} style={{ color: 'var(--ink-3)', flexShrink: 0 }} />
-            </div>
-          ))}
-        </div>
-      )}
+      {dropdown}
     </div>
   );
 }

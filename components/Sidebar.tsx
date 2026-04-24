@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Icon from './Icon';
+import { useUnreadCount } from '@/hooks/useUnreadCount';
 
 type User = { id: number; email: string; display_name?: string; role: 'admin' | 'editor' | 'viewer' };
 
@@ -27,32 +27,12 @@ function displayName(u: User | null) {
 export default function Sidebar({ user, projectCount, userCount, onLogout }: Props) {
   const pathname = usePathname();
   const router = useRouter();
-  const [unreadCount, setUnreadCount] = useState(0);
+  const unreadCount = useUnreadCount();
 
   const onProjects = pathname === '/projects' || pathname?.startsWith('/projects/');
   const onUsers = pathname === '/admin/users';
   const onStats = pathname === '/stats';
   const onInbox = pathname === '/inbox';
-
-  // Auto-fetch unread notification count — refresh every 30s
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-
-    const fetchUnread = async () => {
-      try {
-        const res = await fetch('/api/notifications');
-        if (res.ok && !cancelled) {
-          const notifs: { is_read: boolean }[] = await res.json();
-          setUnreadCount(notifs.filter(n => !n.is_read).length);
-        }
-      } catch {}
-    };
-
-    fetchUnread();
-    const interval = setInterval(fetchUnread, 30_000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [user]);
 
   return (
     <aside className="sidebar">

@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Icon, { type IconId } from './Icon';
+import { useUnreadCount } from '@/hooks/useUnreadCount';
 
 type Role = 'admin' | 'editor' | 'viewer' | undefined;
 
@@ -27,26 +28,7 @@ export default function MobileTabBar({ role }: { role: Role }) {
   const pathname = usePathname() ?? '';
   const router = useRouter();
   const [showMenu, setShowMenu] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
-
-  // Auto-fetch unread count — refresh every 30s
-  useEffect(() => {
-    let cancelled = false;
-
-    const fetchUnread = async () => {
-      try {
-        const res = await fetch('/api/notifications');
-        if (res.ok && !cancelled) {
-          const notifs: { is_read: boolean }[] = await res.json();
-          setUnreadCount(notifs.filter(n => !n.is_read).length);
-        }
-      } catch {}
-    };
-
-    fetchUnread();
-    const interval = setInterval(fetchUnread, 30_000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, []);
+  const unreadCount = useUnreadCount();
 
   const handleLogout = async () => {
     await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'logout' }) });
