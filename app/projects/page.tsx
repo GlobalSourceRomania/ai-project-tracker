@@ -597,7 +597,7 @@ export default function ProjectsPage() {
                         >
                           <div className="rail" />
                           <div className="body">
-                            <div className="id-chip mono">#{p.pipedrive_code}</div>
+                            <div className="id-chip mono">{p.pipedrive_code}</div>
                             <div className="title">{p.title}</div>
                             {p.bottleneck && (
                               <div className="alert-strip">
@@ -703,7 +703,7 @@ export default function ProjectsPage() {
             <div className="modal-head">
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
                 <span className="mono" style={{ fontSize: 11, color: 'var(--gs-blue)', letterSpacing: '0.05em' }}>
-                  #{selectedProject.pipedrive_code}
+                  {selectedProject.pipedrive_code}
                 </span>
                 <span className={`chip ${cardStatusClass(selectedProject.status)}`}><span className="dot" />{STATUS_LABEL[selectedProject.status]}</span>
                 <div style={{ flex: 1 }} />

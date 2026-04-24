@@ -137,7 +137,7 @@ export default function StatsPage() {
                             {project.title}
                           </div>
                           <div style={{ fontSize: 10, color: 'var(--ink-3)', fontFamily: 'monospace' }}>
-                            #{project.pipedrive_code}
+                            {project.pipedrive_code}
                           </div>
                         </div>
 
