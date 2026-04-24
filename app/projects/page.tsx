@@ -441,7 +441,7 @@ export default function ProjectsPage() {
           <div className="topbar">
             <div style={{ minWidth: 0 }}>
               <h1>Projects</h1>
-              <div className="crumb">workspace / projects</div>
+              <div className="crumb sm-hide">workspace / projects</div>
             </div>
             <div className="search">
               <Icon id="search" />

@@ -29,6 +29,8 @@ export default function Sidebar({ user, projectCount, userCount, onLogout }: Pro
 
   const onProjects = pathname === '/projects' || pathname?.startsWith('/projects/');
   const onUsers = pathname === '/admin/users';
+  const onStats = pathname === '/stats';
+  const onInbox = pathname === '/inbox';
 
   return (
     <aside className="sidebar">

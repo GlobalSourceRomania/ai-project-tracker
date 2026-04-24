@@ -17,10 +17,10 @@ type Tab = {
 };
 
 const TABS: Tab[] = [
-  { key: 'projects', label: 'Projects', href: '/projects',   icon: 'board', match: p => p.startsWith('/projects') },
-  { key: 'stats',    label: 'Stats',    href: '/projects#stats', icon: 'stats', match: () => false },
+  { key: 'projects', label: 'Projects', href: '/projects',   icon: 'board', match: p => p.startsWith('/projects') && !p.startsWith('/projects#') },
+  { key: 'stats',    label: 'Stats',    href: '/stats',      icon: 'stats', match: p => p.startsWith('/stats') },
   { key: 'team',     label: 'Team',     href: '/admin/users', icon: 'users', match: p => p.startsWith('/admin/users'), adminOnly: true },
-  { key: 'inbox',    label: 'Inbox',    href: '/projects#inbox', icon: 'inbox', match: () => false },
+  { key: 'inbox',    label: 'Inbox',    href: '/inbox',      icon: 'inbox', match: p => p.startsWith('/inbox') },
 ];
 
 export default function MobileTabBar({ role }: { role: Role }) {

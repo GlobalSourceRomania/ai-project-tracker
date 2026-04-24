@@ -100,6 +100,19 @@ export async function initDB() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      type TEXT CHECK (type IN ('mention', 'change')) NOT NULL,
+      project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      author_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      message TEXT NOT NULL,
+      is_read BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
 }
 
 export async function getUserById(id: number) {
@@ -313,4 +326,44 @@ export async function getPushSubscriptionsExcept(userId: number) {
 export async function deletePushSubscription(endpoint: string) {
   const sql = getDB();
   await sql`DELETE FROM push_subscriptions WHERE endpoint = ${endpoint}`;
+}
+
+// Notifications
+export async function createNotification(userId: number, type: 'mention' | 'change', projectId: number, authorId: number, message: string) {
+  const sql = getDB();
+  const result = await sql`
+    INSERT INTO notifications (user_id, type, project_id, author_id, message)
+    VALUES (${userId}, ${type}, ${projectId}, ${authorId}, ${message})
+    RETURNING *
+  `;
+  return result[0];
+}
+
+export async function getNotifications(userId: number) {
+  const sql = getDB();
+  return sql`
+    SELECT n.*, u.display_name as author_name, p.title as project_name
+    FROM notifications n
+    LEFT JOIN users u ON n.author_id = u.id
+    LEFT JOIN projects p ON n.project_id = p.id
+    WHERE n.user_id = ${userId}
+      AND n.created_at > NOW() - INTERVAL '30 days'
+    ORDER BY n.created_at DESC
+  `;
+}
+
+export async function markNotificationAsRead(id: number) {
+  const sql = getDB();
+  const result = await sql`UPDATE notifications SET is_read = TRUE WHERE id = ${id} RETURNING *`;
+  return result[0];
+}
+
+export async function deleteNotification(id: number) {
+  const sql = getDB();
+  await sql`DELETE FROM notifications WHERE id = ${id}`;
+}
+
+export async function deleteOldNotifications() {
+  const sql = getDB();
+  await sql`DELETE FROM notifications WHERE created_at < NOW() - INTERVAL '30 days'`;
 }
