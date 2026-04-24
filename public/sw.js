@@ -1,102 +1,56 @@
 /**
  * Service Worker for AI Project Tracker PWA
- * Handles push notifications and offline assets
+ * Handles push notifications, app-icon badge, and asset caching.
  */
 
-const CACHE_NAME = 'ai-tracker-v1';
-const ASSETS_TO_CACHE = [
-  '/',
-  '/logo.svg',
-  '/logo-dark.svg',
-  '/favicon-32x32.png',
-];
+const CACHE_NAME = 'ai-tracker-v2';
+const ASSETS_TO_CACHE = ['/', '/logo.svg', '/favicon-32x32.png'];
 
-// Install event - cache assets
+// ─── Install ────────────────────────────────────────────────────────────────
 self.addEventListener('install', (event) => {
-  console.log('[SW] Installing...');
   self.skipWaiting();
-
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      console.log('[SW] Caching assets...');
-      return cache.addAll(ASSETS_TO_CACHE).catch((err) => {
-        console.warn('[SW] Asset caching failed (non-critical):', err);
-      });
-    })
+    caches.open(CACHE_NAME).then((cache) =>
+      cache.addAll(ASSETS_TO_CACHE).catch(() => {})
+    )
   );
 });
 
-// Activate event - clean up old caches
+// ─── Activate ───────────────────────────────────────────────────────────────
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activating...');
   self.clients.claim();
-
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames
-          .filter((cacheName) => cacheName !== CACHE_NAME)
-          .map((cacheName) => {
-            console.log('[SW] Deleting old cache:', cacheName);
-            return caches.delete(cacheName);
-          })
-      );
-    })
+    caches.keys().then((names) =>
+      Promise.all(names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n)))
+    )
   );
 });
 
-// Fetch event - network first for API, cache fallback for assets
+// ─── Fetch (network-first for API, cache-first for assets) ──────────────────
 self.addEventListener('fetch', (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
-
-  // Network first for API calls
+  const url = new URL(event.request.url);
   if (url.pathname.startsWith('/api/')) {
-    return event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            const cache = caches.open(CACHE_NAME);
-            cache.then((c) => c.put(request, response.clone()));
-          }
-          return response;
-        })
-        .catch(() => caches.match(request))
+    // Network-first for API
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match(event.request))
     );
-  }
-
-  // Cache first for assets
-  event.respondWith(
-    caches.match(request).then((response) => {
-      if (response) return response;
-      return fetch(request).then((response) => {
-        if (!response || response.status !== 200 || response.type === 'error') {
-          return response;
-        }
-        const responseToCache = response.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(request, responseToCache);
-        });
-        return response;
-      });
-    })
-  );
-});
-
-// Push event - receive and show notifications
-self.addEventListener('push', (event) => {
-  console.log('[SW] Push received:', event);
-
-  if (!event.data) {
-    console.warn('[SW] Push event with no data');
     return;
   }
+  // Cache-first for static assets
+  event.respondWith(
+    caches.match(event.request).then(
+      (cached) => cached || fetch(event.request)
+    )
+  );
+});
 
+// ─── Push received ──────────────────────────────────────────────────────────
+self.addEventListener('push', (event) => {
   let payload = {};
   try {
-    payload = event.data.json();
+    payload = event.data ? event.data.json() : {};
   } catch {
-    payload = { title: 'AI Tracker', body: event.data.text() };
+    payload = { title: 'AI Tracker', body: event.data ? event.data.text() : 'New update' };
   }
 
   const {
@@ -104,67 +58,65 @@ self.addEventListener('push', (event) => {
     body = 'New update',
     icon = '/logo-512x512.png',
     badge = '/favicon-32x32.png',
-    tag = 'ai-tracker-notification',
+    badgeCount,          // optional number sent in payload
   } = payload;
 
   const options = {
     body,
     icon,
     badge,
-    tag,
+    tag: 'ai-tracker',
+    renotify: true,      // vibrate even if same tag
     requireInteraction: false,
-    actions: [
-      { action: 'open', title: 'View' },
-      { action: 'close', title: 'Dismiss' },
-    ],
     data: payload,
+    actions: [
+      { action: 'open',    title: 'Open' },
+      { action: 'dismiss', title: 'Dismiss' },
+    ],
   };
 
   event.waitUntil(
-    self.registration.showNotification(title, options).then(() => {
-      // Notify all clients about the push
-      self.clients.matchAll().then((clients) => {
-        clients.forEach((client) => {
-          client.postMessage({
-            type: 'PUSH_RECEIVED',
-            payload,
-          });
-        });
+    Promise.all([
+      // Show the OS notification
+      self.registration.showNotification(title, options),
+
+      // Update app-icon badge number (iOS 16.4+ / Android Chrome)
+      'setAppBadge' in self.navigator
+        ? self.navigator.setAppBadge(badgeCount ?? 1).catch(() => {})
+        : Promise.resolve(),
+    ]).then(() => {
+      // Tell all open tabs so they can refresh the badge count immediately
+      self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then((clients) => {
+        clients.forEach((client) => client.postMessage({ type: 'PUSH_RECEIVED', payload }));
       });
     })
   );
 });
 
-// Notification click event - navigate to project or close
+// ─── Notification clicked ────────────────────────────────────────────────────
 self.addEventListener('notificationclick', (event) => {
-  console.log('[SW] Notification clicked:', event.action);
-
   event.notification.close();
 
-  if (event.action === 'close') {
-    return;
-  }
+  if (event.action === 'dismiss') return;
 
-  const { projectId, action } = event.notification.data;
-
-  let targetUrl = '/projects';
-  if (projectId) {
-    targetUrl = `/projects?id=${projectId}`;
-  }
+  const { projectId } = event.notification.data || {};
+  const targetUrl = projectId ? `/projects?open=${projectId}` : '/inbox';
 
   event.waitUntil(
-    clients.matchAll({ type: 'window' }).then((clientList) => {
-      // Check if a window is already open
-      for (const client of clientList) {
-        if (client.url === targetUrl && 'focus' in client) {
-          return client.focus();
+    // Clear badge when user interacts with the notification
+    ('clearAppBadge' in self.navigator
+      ? self.navigator.clearAppBadge().catch(() => {})
+      : Promise.resolve()
+    ).then(() =>
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+        for (const client of clientList) {
+          if ('focus' in client) {
+            client.navigate(targetUrl);
+            return client.focus();
+          }
         }
-      }
-
-      // Open new window if none found
-      if (clients.openWindow) {
-        return clients.openWindow(targetUrl);
-      }
-    })
+        if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
+      })
+    )
   );
 });
