@@ -24,11 +24,49 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const description = body.description !== undefined ? body.description : project.description ?? null;
     const bottleneck = body.bottleneck !== undefined ? body.bottleneck : project.bottleneck ?? null;
 
-    const updated = await updateProject(projectId, title, status, description, bottleneck);
+    // Handle pipedrive_code update
+    let pipedriveCode = body.pipedriveCode !== undefined ? body.pipedriveCode : project.pipedrive_code;
+
+    // Determine if pipedrive_code is required based on status
+    const statusesRequiringCode = ['in_progress', 'bottleneck', 'completed'];
+    const isCodeRequired = statusesRequiringCode.includes(status);
+
+    // Validate pipedrive_code requirement
+    if (isCodeRequired && !pipedriveCode?.trim()) {
+      return NextResponse.json(
+        { error: `Pipedrive code is required for status "${status}"` },
+        { status: 400 }
+      );
+    }
+
+    // Normalize pipedrive code if provided
+    if (pipedriveCode?.trim()) {
+      pipedriveCode = '#' + String(pipedriveCode).replace(/^#+/, '').trim();
+    } else {
+      pipedriveCode = null;
+    }
+
+    // Update project with pipedrive code
+    const { getDB } = await import('@/lib/db');
+    const sql = getDB();
+    const result = await sql`
+      UPDATE projects
+      SET title = ${title.trim()},
+          status = ${status},
+          description = ${description},
+          bottleneck = ${bottleneck},
+          pipedrive_code = ${pipedriveCode},
+          updated_at = NOW()
+      WHERE id = ${projectId}
+      RETURNING *
+    `;
+
+    const updated = result[0];
 
     // Create inbox "change" notifications for all other users + push
     const authorName = user.display_name || user.email;
     const changedField = body.status !== undefined && body.status !== project.status ? `status → ${body.status}` :
+      body.pipedriveCode !== undefined && body.pipedriveCode !== project.pipedrive_code ? 'pipedrive code' :
       body.description !== undefined && body.description !== project.description ? 'description' :
       body.bottleneck !== undefined && body.bottleneck !== project.bottleneck ? 'bottleneck' : 'project';
     const changeMsg = `${authorName} updated ${changedField} in "${title}"`;

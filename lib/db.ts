@@ -49,14 +49,14 @@ export async function initDB() {
     CREATE TABLE IF NOT EXISTS projects (
       id SERIAL PRIMARY KEY,
       title TEXT NOT NULL,
-      pipedrive_code TEXT NOT NULL,
+      pipedrive_code TEXT,
       owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-      status TEXT CHECK (status IN ('planning', 'in_progress', 'waiting', 'completed')) DEFAULT 'planning',
+      status TEXT CHECK (status IN ('planning', 'demo', 'in_progress', 'waiting', 'bottleneck', 'completed')) DEFAULT 'planning',
       description TEXT,
       bottleneck TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW(),
-      CONSTRAINT projects_pipedrive_code_unique UNIQUE (pipedrive_code)
+      CONSTRAINT projects_pipedrive_code_unique_non_null UNIQUE (LOWER(pipedrive_code)) WHERE pipedrive_code IS NOT NULL
     )
   `;
 
@@ -64,9 +64,14 @@ export async function initDB() {
   await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT`;
   await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS bottleneck TEXT`;
 
-  // Migration: expand status check constraint to include 'bottleneck'
+  // Migration: expand status check constraint to include 'demo' and 'bottleneck'
+  // Also make pipedrive_code nullable for planning and demo statuses
   await sql`ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_status_check`;
-  await sql`ALTER TABLE projects ADD CONSTRAINT projects_status_check CHECK (status IN ('planning', 'in_progress', 'waiting', 'completed', 'bottleneck'))`;
+  await sql`ALTER TABLE projects ADD CONSTRAINT projects_status_check CHECK (status IN ('planning', 'demo', 'in_progress', 'waiting', 'bottleneck', 'completed'))`;
+
+  // Migration: drop old unique constraint if it exists and add new one with WHERE clause
+  await sql`ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_pipedrive_code_unique`;
+  await sql`ALTER TABLE projects ADD CONSTRAINT projects_pipedrive_code_unique_non_null UNIQUE (LOWER(pipedrive_code)) WHERE pipedrive_code IS NOT NULL`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS project_updates (

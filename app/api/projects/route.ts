@@ -27,16 +27,33 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, pipedriveCode, status, description, bottleneck } = body;
+    const { title, pipedriveCode, status = 'planning', description, bottleneck } = body;
 
-    if (!title || !pipedriveCode) {
-      return NextResponse.json({ error: 'Title and pipedrive code required' }, { status: 400 });
+    // Validate title is provided
+    if (!title?.trim()) {
+      return NextResponse.json({ error: 'Project title is required' }, { status: 400 });
     }
 
-    // Always store with exactly one leading '#', regardless of what the user typed
-    const normalizedCode = '#' + String(pipedriveCode).replace(/^#+/, '');
+    // Determine if pipedrive_code is required based on status
+    const statusesRequiringCode = ['in_progress', 'bottleneck', 'completed'];
+    const statusesWithoutCode = ['planning', 'demo'];
+    const isCodeRequired = statusesRequiringCode.includes(status);
 
-    const project = await createProject(title, normalizedCode, user.id, status || 'planning', description, bottleneck);
+    // Validate pipedrive_code requirement
+    if (isCodeRequired && !pipedriveCode?.trim()) {
+      return NextResponse.json(
+        { error: `Pipedrive code is required for status "${status}"` },
+        { status: 400 }
+      );
+    }
+
+    // Normalize pipedrive code if provided
+    let normalizedCode = null;
+    if (pipedriveCode?.trim()) {
+      normalizedCode = '#' + String(pipedriveCode).replace(/^#+/, '').trim();
+    }
+
+    const project = await createProject(title.trim(), normalizedCode, user.id, status, description, bottleneck);
 
     // Notify all other users about new project (inbox + push)
     const authorName = user.display_name || user.email;

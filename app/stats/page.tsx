@@ -25,6 +25,7 @@ const statusOrder: Record<string, number> = {
   'in_progress': 1,
   'waiting': 2,
   'planning': 3,
+  'demo': 3.5,
   'bottleneck': 2.5,
   'completed': 4,
 };
@@ -33,6 +34,7 @@ const statusColor: Record<string, string> = {
   'in_progress': '#8dd13a',
   'waiting': '#e8a73a',
   'planning': '#aab3c5',
+  'demo': '#7b68ee',
   'bottleneck': '#e8863a',
   'completed': '#2ba8d9',
 };

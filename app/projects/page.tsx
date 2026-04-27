@@ -10,7 +10,7 @@ import Sidebar from '@/components/Sidebar';
 import MobileTabBar from '@/components/MobileTabBar';
 import Icon from '@/components/Icon';
 
-type Status = 'planning' | 'in_progress' | 'waiting' | 'completed' | 'bottleneck';
+type Status = 'planning' | 'demo' | 'in_progress' | 'waiting' | 'completed' | 'bottleneck';
 
 type Project = {
   id: number;
@@ -41,13 +41,18 @@ type User = { id: number; email: string; display_name?: string; role: 'admin' | 
 
 const STATUS_LABEL: Record<Status, string> = {
   planning: 'Planning',
+  demo: 'Demo',
   in_progress: 'In Progress',
   waiting: 'Waiting',
   bottleneck: 'Bottleneck',
   completed: 'Completed',
 };
 
-const KANBAN_COLUMNS: Status[] = ['planning', 'in_progress', 'waiting', 'bottleneck', 'completed'];
+const KANBAN_COLUMNS: Status[] = ['planning', 'demo', 'in_progress', 'waiting', 'bottleneck', 'completed'];
+
+// Statuses that require a pipedrive code
+const STATUSES_REQUIRING_CODE = ['in_progress', 'bottleneck', 'completed'];
+const STATUSES_WITHOUT_CODE = ['planning', 'demo'];
 
 function cardStatusClass(s: Status) {
   if (s === 'in_progress') return 'st-progress';
@@ -61,8 +66,9 @@ function progressOf(p: Project) {
   }
   // fallback by status
   if (p.status === 'completed') return 100;
-  if (p.status === 'planning') return 10;
   if (p.status === 'in_progress') return 50;
+  if (p.status === 'demo') return 30;
+  if (p.status === 'planning') return 10;
   if (p.status === 'waiting') return 45;
   if (p.status === 'bottleneck') return 25;
   return 0;
@@ -108,6 +114,7 @@ export default function ProjectsPage() {
   // Status / description / bottleneck editing
   const [editingStatus, setEditingStatus] = useState(false);
   const [pendingStatus, setPendingStatus] = useState<Status | null>(null);
+  const [pendingPipedriveCode, setPendingPipedriveCode] = useState<string | null>(null);
   const [editingDescription, setEditingDescription] = useState(false);
   const [pendingDescription, setPendingDescription] = useState('');
   const [editingBottleneck, setEditingBottleneck] = useState(false);
@@ -259,13 +266,30 @@ export default function ProjectsPage() {
 
   const handleSaveStatus = async () => {
     if (!selectedProject || !pendingStatus) return;
-    const res = await putProject({ status: pendingStatus });
+
+    // Validate pipedrive code requirement
+    if (STATUSES_REQUIRING_CODE.includes(pendingStatus) && !pendingPipedriveCode?.trim()) {
+      notify(`Pipedrive code is required for status "${pendingStatus}"`);
+      return;
+    }
+
+    const updateData: any = { status: pendingStatus };
+    if (pendingPipedriveCode !== null) {
+      updateData.pipedriveCode = pendingPipedriveCode.trim();
+    }
+
+    const res = await putProject(updateData);
     if (res) {
-      const updated = { ...selectedProject, status: pendingStatus };
+      const updated = {
+        ...selectedProject,
+        status: pendingStatus,
+        pipedrive_code: pendingPipedriveCode || selectedProject.pipedrive_code,
+      };
       setSelectedProject(updated);
-      setProjects(projects.map(p => p.id === selectedProject.id ? { ...p, status: pendingStatus } : p));
+      setProjects(projects.map(p => p.id === selectedProject.id ? updated : p));
       setEditingStatus(false);
       setPendingStatus(null);
+      setPendingPipedriveCode(null);
       notify('Status updated!');
     }
   };
@@ -534,19 +558,28 @@ export default function ProjectsPage() {
                     <input type="text" placeholder="e.g. Sistem Inspectie Automata" value={newProject.title} onChange={(e) => setNewProject({ ...newProject, title: e.target.value })} className="input" required />
                   </div>
                   <div>
-                    <label className="label">Pipedrive code</label>
-                    <input type="text" placeholder="e.g. #260422z1" value={newProject.pipedriveCode} onChange={(e) => setNewProject({ ...newProject, pipedriveCode: e.target.value })} className="input" required />
-                  </div>
-                  <div>
                     <label className="label">Status</label>
                     <select value={newProject.status} onChange={(e) => setNewProject({ ...newProject, status: e.target.value as Status })} className="input">
                       <option value="planning">Planning</option>
+                      <option value="demo">Demo</option>
                       <option value="in_progress">In Progress</option>
                       <option value="waiting">Waiting</option>
                       <option value="bottleneck">Bottleneck</option>
                       <option value="completed">Completed</option>
                     </select>
                   </div>
+                  {STATUSES_REQUIRING_CODE.includes(newProject.status) && (
+                    <div>
+                      <label className="label">Pipedrive code <span style={{ color: '#e8863a' }}>*required</span></label>
+                      <input type="text" placeholder="e.g. #260422z1" value={newProject.pipedriveCode} onChange={(e) => setNewProject({ ...newProject, pipedriveCode: e.target.value })} className="input" required />
+                    </div>
+                  )}
+                  {STATUSES_WITHOUT_CODE.includes(newProject.status) && (
+                    <div>
+                      <label className="label">Pipedrive code <span style={{ color: 'var(--ink-3)', fontSize: 12 }}>(optional)</span></label>
+                      <input type="text" placeholder="e.g. #260422z1 (leave empty for planning/demo)" value={newProject.pipedriveCode} onChange={(e) => setNewProject({ ...newProject, pipedriveCode: e.target.value })} className="input" />
+                    </div>
+                  )}
                   <div>
                     <label className="label">Description (optional)</label>
                     <textarea placeholder="Descriere generală a proiectului..." value={newProject.description} onChange={(e) => setNewProject({ ...newProject, description: e.target.value })} className="input" rows={2} />
@@ -746,21 +779,43 @@ export default function ProjectsPage() {
               </div>
 
               {editingStatus && (
-                <div style={{ marginTop: 14, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <select
-                    className="input"
-                    style={{ maxWidth: 220 }}
-                    value={pendingStatus ?? selectedProject.status}
-                    onChange={(e) => setPendingStatus(e.target.value as Status)}
-                  >
-                    <option value="planning">Planning</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="waiting">Waiting</option>
-                    <option value="bottleneck">Bottleneck</option>
-                    <option value="completed">Completed</option>
-                  </select>
-                  <button className="btn primary sm" onClick={handleSaveStatus}>Save</button>
-                  <button className="btn sm" onClick={() => { setEditingStatus(false); setPendingStatus(null); }}>Cancel</button>
+                <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <select
+                      className="input"
+                      style={{ maxWidth: 220 }}
+                      value={pendingStatus ?? selectedProject.status}
+                      onChange={(e) => setPendingStatus(e.target.value as Status)}
+                    >
+                      <option value="planning">Planning</option>
+                      <option value="demo">Demo</option>
+                      <option value="in_progress">In Progress</option>
+                      <option value="waiting">Waiting</option>
+                      <option value="bottleneck">Bottleneck</option>
+                      <option value="completed">Completed</option>
+                    </select>
+                  </div>
+
+                  {/* Pipedrive code edit - show only if status requires it or has current code */}
+                  {(STATUSES_REQUIRING_CODE.includes(pendingStatus || selectedProject.status)) && (
+                    <div>
+                      <label className="label" style={{ marginBottom: 6, fontSize: 12 }}>Pipedrive code</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. #260422z1"
+                        value={pendingPipedriveCode ?? selectedProject.pipedrive_code ?? ''}
+                        onChange={(e) => setPendingPipedriveCode(e.target.value)}
+                        className="input"
+                        style={{ fontSize: 12 }}
+                        required
+                      />
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn primary sm" onClick={handleSaveStatus}>Save</button>
+                    <button className="btn sm" onClick={() => { setEditingStatus(false); setPendingStatus(null); setPendingPipedriveCode(null); }}>Cancel</button>
+                  </div>
                 </div>
               )}
 
