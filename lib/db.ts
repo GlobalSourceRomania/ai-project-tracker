@@ -51,12 +51,11 @@ export async function initDB() {
       title TEXT NOT NULL,
       pipedrive_code TEXT,
       owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-      status TEXT CHECK (status IN ('planning', 'demo', 'in_progress', 'bottleneck', 'completed')) DEFAULT 'planning',
+      status TEXT DEFAULT 'planning',
       description TEXT,
       bottleneck TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW(),
-      updated_at TIMESTAMPTZ DEFAULT NOW(),
-      CONSTRAINT projects_pipedrive_code_unique_non_null UNIQUE (LOWER(pipedrive_code)) WHERE pipedrive_code IS NOT NULL
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     )
   `;
 
@@ -64,14 +63,18 @@ export async function initDB() {
   await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT`;
   await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS bottleneck TEXT`;
 
-  // Migration: expand status check constraint to include 'demo' and 'bottleneck', remove 'waiting'
-  // Also make pipedrive_code nullable for planning and demo statuses
-  await sql`ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_status_check`;
-  await sql`ALTER TABLE projects ADD CONSTRAINT projects_status_check CHECK (status IN ('planning', 'demo', 'in_progress', 'bottleneck', 'completed'))`;
+  // Migration: make pipedrive_code nullable
+  await sql`ALTER TABLE projects ALTER COLUMN pipedrive_code DROP NOT NULL`.catch(() => {});
 
-  // Migration: drop old unique constraint if it exists and add new one with WHERE clause
-  await sql`ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_pipedrive_code_unique`;
-  await sql`ALTER TABLE projects ADD CONSTRAINT projects_pipedrive_code_unique_non_null UNIQUE (LOWER(pipedrive_code)) WHERE pipedrive_code IS NOT NULL`;
+  // Migration: update status constraint — remove 'waiting', add 'demo'
+  await sql`ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_status_check`.catch(() => {});
+  await sql`ALTER TABLE projects ADD CONSTRAINT projects_status_check CHECK (status IN ('planning', 'demo', 'in_progress', 'bottleneck', 'completed'))`.catch(() => {});
+
+  // Migration: drop old unique constraints/indexes and create clean partial index
+  await sql`ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_pipedrive_code_unique`.catch(() => {});
+  await sql`ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_pipedrive_code_unique_non_null`.catch(() => {});
+  await sql`DROP INDEX IF EXISTS projects_pipedrive_code_unique_non_null`.catch(() => {});
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS projects_pipedrive_code_unique_non_null ON projects (pipedrive_code) WHERE pipedrive_code IS NOT NULL`.catch(() => {});
 
   await sql`
     CREATE TABLE IF NOT EXISTS project_updates (
