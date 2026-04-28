@@ -10,7 +10,7 @@ import Sidebar from '@/components/Sidebar';
 import MobileTabBar from '@/components/MobileTabBar';
 import Icon from '@/components/Icon';
 
-type Status = 'planning' | 'demo' | 'in_progress' | 'waiting' | 'completed' | 'bottleneck';
+type Status = 'planning' | 'demo' | 'in_progress' | 'bottleneck' | 'completed';
 
 type Project = {
   id: number;
@@ -43,12 +43,11 @@ const STATUS_LABEL: Record<Status, string> = {
   planning: 'Planning',
   demo: 'Demo',
   in_progress: 'In Progress',
-  waiting: 'Waiting',
   bottleneck: 'Bottleneck',
   completed: 'Completed',
 };
 
-const KANBAN_COLUMNS: Status[] = ['planning', 'demo', 'in_progress', 'waiting', 'bottleneck', 'completed'];
+const KANBAN_COLUMNS: Status[] = ['planning', 'demo', 'in_progress', 'bottleneck', 'completed'];
 
 // Statuses that require a pipedrive code
 const STATUSES_REQUIRING_CODE = ['in_progress', 'bottleneck', 'completed'];
@@ -67,10 +66,9 @@ function progressOf(p: Project) {
   // fallback by status
   if (p.status === 'completed') return 100;
   if (p.status === 'in_progress') return 50;
+  if (p.status === 'bottleneck') return 25;
   if (p.status === 'demo') return 30;
   if (p.status === 'planning') return 10;
-  if (p.status === 'waiting') return 45;
-  if (p.status === 'bottleneck') return 25;
   return 0;
 }
 
@@ -563,7 +561,6 @@ export default function ProjectsPage() {
                       <option value="planning">Planning</option>
                       <option value="demo">Demo</option>
                       <option value="in_progress">In Progress</option>
-                      <option value="waiting">Waiting</option>
                       <option value="bottleneck">Bottleneck</option>
                       <option value="completed">Completed</option>
                     </select>
@@ -790,7 +787,6 @@ export default function ProjectsPage() {
                       <option value="planning">Planning</option>
                       <option value="demo">Demo</option>
                       <option value="in_progress">In Progress</option>
-                      <option value="waiting">Waiting</option>
                       <option value="bottleneck">Bottleneck</option>
                       <option value="completed">Completed</option>
                     </select>

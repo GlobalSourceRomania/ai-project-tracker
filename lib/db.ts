@@ -51,7 +51,7 @@ export async function initDB() {
       title TEXT NOT NULL,
       pipedrive_code TEXT,
       owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-      status TEXT CHECK (status IN ('planning', 'demo', 'in_progress', 'waiting', 'bottleneck', 'completed')) DEFAULT 'planning',
+      status TEXT CHECK (status IN ('planning', 'demo', 'in_progress', 'bottleneck', 'completed')) DEFAULT 'planning',
       description TEXT,
       bottleneck TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -64,10 +64,10 @@ export async function initDB() {
   await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT`;
   await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS bottleneck TEXT`;
 
-  // Migration: expand status check constraint to include 'demo' and 'bottleneck'
+  // Migration: expand status check constraint to include 'demo' and 'bottleneck', remove 'waiting'
   // Also make pipedrive_code nullable for planning and demo statuses
   await sql`ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_status_check`;
-  await sql`ALTER TABLE projects ADD CONSTRAINT projects_status_check CHECK (status IN ('planning', 'demo', 'in_progress', 'waiting', 'bottleneck', 'completed'))`;
+  await sql`ALTER TABLE projects ADD CONSTRAINT projects_status_check CHECK (status IN ('planning', 'demo', 'in_progress', 'bottleneck', 'completed'))`;
 
   // Migration: drop old unique constraint if it exists and add new one with WHERE clause
   await sql`ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_pipedrive_code_unique`;
@@ -242,7 +242,7 @@ export async function createProject(
   title: string,
   pipedriveCode: string | null,
   ownerId: number,
-  status: 'planning' | 'demo' | 'in_progress' | 'waiting' | 'bottleneck' | 'completed' = 'planning',
+  status: 'planning' | 'demo' | 'in_progress' | 'bottleneck' | 'completed' = 'planning',
   description?: string,
   bottleneck?: string,
 ) {

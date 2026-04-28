@@ -23,16 +23,14 @@ type Me = { id: number; email: string; display_name?: string; role: 'admin' | 'e
 
 const statusOrder: Record<string, number> = {
   'in_progress': 1,
-  'waiting': 2,
-  'planning': 3,
-  'demo': 3.5,
-  'bottleneck': 2.5,
+  'planning': 2,
+  'demo': 2.5,
+  'bottleneck': 3,
   'completed': 4,
 };
 
 const statusColor: Record<string, string> = {
   'in_progress': '#8dd13a',
-  'waiting': '#e8a73a',
   'planning': '#aab3c5',
   'demo': '#7b68ee',
   'bottleneck': '#e8863a',
