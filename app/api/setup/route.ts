@@ -28,16 +28,8 @@ export async function POST() {
 
     // Migration: drop old unique constraint and add new one (only for non-NULL values)
     await sql`ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_pipedrive_code_unique`.catch(() => {});
-    await sql`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM pg_constraint WHERE conname = 'projects_pipedrive_code_unique_non_null'
-        ) THEN
-          EXECUTE 'CREATE UNIQUE INDEX projects_pipedrive_code_unique_non_null ON projects (LOWER(pipedrive_code)) WHERE pipedrive_code IS NOT NULL';
-        END IF;
-      END$$
-    `.catch(() => {});
+    await sql`DROP INDEX IF EXISTS projects_pipedrive_code_unique_non_null`.catch(() => {});
+    await sql`CREATE UNIQUE INDEX projects_pipedrive_code_unique_non_null ON projects (LOWER(pipedrive_code)) WHERE pipedrive_code IS NOT NULL`.catch(() => {});
 
     // Migration: update status constraint — remove 'waiting', add 'demo'
     await sql`ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_status_check`.catch(() => {});
