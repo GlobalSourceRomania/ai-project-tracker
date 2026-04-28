@@ -209,10 +209,9 @@ export default function ProjectsPage() {
     const total = projects.length;
     const active = projects.filter(p => p.status === 'in_progress').length;
     const blocked = projects.filter(p => p.status === 'bottleneck').length;
-    const waiting = projects.filter(p => p.status === 'waiting').length;
     const done = projects.filter(p => p.status === 'completed').length;
     const completion = total === 0 ? 0 : Math.round((done / total) * 100);
-    return { total, active, blocked, waiting, done, completion };
+    return { total, active, blocked, done, completion };
   }, [projects]);
 
   // ---------- filtered projects (by search) ----------
@@ -531,11 +530,6 @@ export default function ProjectsPage() {
             <div className="stat">
               <div className="l">Bottleneck</div>
               <div className="n" style={{ color: '#e8863a' }}>{stats.blocked}</div>
-              <div className="spark" />
-            </div>
-            <div className="stat">
-              <div className="l">Waiting</div>
-              <div className="n" style={{ color: '#e8a73a' }}>{stats.waiting}</div>
               <div className="spark" />
             </div>
             <div className="stat grad">
