@@ -240,16 +240,16 @@ export async function getProjectsByUserId(userId: number) {
 
 export async function createProject(
   title: string,
-  pipedriveCode: string,
+  pipedriveCode: string | null,
   ownerId: number,
-  status: 'planning' | 'in_progress' | 'waiting' | 'completed' = 'planning',
+  status: 'planning' | 'demo' | 'in_progress' | 'waiting' | 'bottleneck' | 'completed' = 'planning',
   description?: string,
   bottleneck?: string,
 ) {
   const sql = getDB();
   const result = await sql`
     INSERT INTO projects (title, pipedrive_code, owner_id, status, description, bottleneck)
-    VALUES (${title}, ${pipedriveCode}, ${ownerId}, ${status}, ${description || null}, ${bottleneck || null})
+    VALUES (${title}, ${pipedriveCode || null}, ${ownerId}, ${status}, ${description || null}, ${bottleneck || null})
     RETURNING *
   `;
   return result[0];
