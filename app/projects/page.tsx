@@ -598,7 +598,7 @@ export default function ProjectsPage() {
                   col === 'in_progress' ? 'var(--gs-green)' :
                   col === 'bottleneck'  ? 'var(--warn)' :
                   col === 'completed'   ? 'var(--gs-blue)' :
-                  col === 'waiting'     ? '#e8a73a' :
+                  col === 'demo'        ? '#7b68ee' :
                                           'var(--ink-3)';
                 return (
                   <div key={col} className="kanban-col">
